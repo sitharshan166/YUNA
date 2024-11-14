@@ -2,77 +2,98 @@
 #include <QDBusInterface>
 #include <QDBusConnection>
 #include <QDBusReply>
+#include <QTimer>
+#include <QDateTime>
 #include <iostream>
+#include <QCommandLineParser>
+#include <QCommandLineOption>
+#include <string>
 
-#define NM_PATH "/org/freedesktop/NetworkManager"
-#define NM_INTERFACE "org.freedesktop.NetworkManager"
+using namespace std;
+
 #define FIREWALL_PATH "/org/fedoraproject/FirewallD1"
 #define FIREWALL_INTERFACE "org.fedoraproject.FirewallD1"
 
-// Class to manage the firewall
 class FirewallManager : public QObject {
     Q_OBJECT
 public:
     explicit FirewallManager(QDBusConnection &bus, QObject *parent = nullptr) : QObject(parent) {
-        // Get firewalld interface
         firewallInterface = new QDBusInterface(FIREWALL_INTERFACE, FIREWALL_PATH, FIREWALL_INTERFACE, bus, this);
         if (!firewallInterface->isValid()) {
-            std::cerr << "Error: Unable to get firewalld interface." << std::endl;
+            cerr << "Error: Unable to get firewalld interface." << endl;
             exit(1);
         }
     }
 
-    // Function to add a firewall rule
     void addFirewallRule(const QString &sourceIP, const QString &destIP, const QString &port) {
-        QDBusMessage reply = firewallInterface->call("AddRule", sourceIP, destIP, port);
+        QDBusMessage reply = firewallInterface->call("add", sourceIP, destIP, port);
         if (reply.type() == QDBusMessage::ReplyMessage) {
-            std::cout << "Firewall rule added: " << sourceIP.toStdString() << " -> " << destIP.toStdString() << ":" << port.toStdString() << std::endl;
+            cout << "Firewall rule added: " << sourceIP.toStdString() << " -> " << destIP.toStdString() << ":" << port.toStdString() << endl;
         } else {
-            std::cerr << "Error: Unable to add firewall rule." << std::endl;
+            cerr << "Error: Unable to add firewall rule." << endl;
         }
     }
 
-    // Function to remove a firewall rule
     void removeFirewallRule(const QString &ruleID) {
-        QDBusMessage reply = firewallInterface->call("RemoveRule", ruleID);
+        QDBusMessage reply = firewallInterface->call("remove", ruleID);
         if (reply.type() == QDBusMessage::ReplyMessage) {
-            std::cout << "Firewall rule removed: " << ruleID.toStdString() << std::endl;
+            cout << "Firewall rule removed: " << ruleID.toStdString() << endl;
         } else {
-            std::cerr << "Error: Unable to remove firewall rule." << std::endl;
+            cerr << "Error: Unable to remove firewall rule." << endl;
         }
     }
 
-    // Function to enable the firewall
     void enableFirewall() {
-        QDBusMessage reply = firewallInterface->call("Enable");
+        QDBusMessage reply = firewallInterface->call("enable");
         if (reply.type() == QDBusMessage::ReplyMessage) {
-            std::cout << "Firewall enabled." << std::endl;
+            cout << "Firewall enabled." << endl;
         } else {
-            std::cerr << "Error: Unable to enable firewall." << std::endl;
+            cerr << "Error: Unable to enable firewall." << endl;
         }
     }
 
-    // Function to disable the firewall
     void disableFirewall() {
-        QDBusMessage reply = firewallInterface->call("Disable");
+        QDBusMessage reply = firewallInterface->call("disable");
         if (reply.type() == QDBusMessage::ReplyMessage) {
-            std::cout << "Firewall disabled." << std::endl;
+            cout << "Firewall disabled." << endl;
         } else {
-            std::cerr << "Error: Unable to disable firewall." << std::endl;
+            cerr << "Error: Unable to disable firewall." << endl;
         }
     }
 
-    // Function to list firewall rules
     void listFirewallRules() {
-        QDBusReply<QStringList> reply = firewallInterface->call("ListRules");
+        QDBusReply<QStringList> reply = firewallInterface->call("listRules");
         if (reply.isValid()) {
-            std::cout << "Current firewall rules:" << std::endl;
+            cout << "Current firewall rules:" << endl;
             for (const QString &rule : reply.value()) {
-                std::cout << "- " << rule.toStdString() << std::endl;
+                cout << "- " << rule.toStdString() << endl;
             }
         } else {
-            std::cerr << "Error: Unable to retrieve firewall rules." << std::endl;
+            cerr << "Error: Unable to retrieve firewall rules." << endl;
         }
+    }
+
+    void scheduleFirewallChange(const QDateTime &scheduledTime, const QString &action) {
+        int delay = QDateTime::currentDateTime().msecsTo(scheduledTime);
+        if (delay <= 0) {
+            cerr << "Error: Scheduled time is in the past." << endl;
+            return;
+        }
+
+        QTimer *timer = new QTimer(this);
+        connect(timer, &QTimer::timeout, [this, action, timer] {
+            if (action == "enable") {
+                this->enableFirewall();
+            } else if (action == "disable") {
+                this->disableFirewall();
+            } else {
+                cerr << "Error: Unknown action for scheduling." << endl;
+            }
+            timer->deleteLater(); // Clean up the timer after it has fired
+        });
+        timer->start(delay);  // Start the timer to fire after the calculated delay
+        cout << "Scheduled action (" << action.toStdString() << ") at "
+             << scheduledTime.toString().toStdString() << endl;
     }
 
 private:
@@ -83,57 +104,83 @@ private:
 int main(int argc, char *argv[]) {
     QCoreApplication app(argc, argv);
 
+    // Create QCommandLineParser
+    QCommandLineParser parser;
+    parser.setApplicationDescription("Manage Firewall Rules using D-Bus");
+    parser.addHelpOption();
+    parser.addVersionOption();
+
+    // Define options
+    QCommandLineOption addOption("add", "Add a firewall rule <sourceIP> <destIP> <port>");
+    QCommandLineOption removeOption("remove", "Remove a firewall rule <ruleID>");
+    QCommandLineOption enableOption("enable", "Enable the firewall");
+    QCommandLineOption disableOption("disable", "Disable the firewall");
+    QCommandLineOption listOption("list", "List current firewall rules");
+    QCommandLineOption scheduleOption("schedule", "Schedule an action at a specific time <action> <time>");
+
+    // Add options to parser
+    parser.addOption(addOption);
+    parser.addOption(removeOption);
+    parser.addOption(enableOption);
+    parser.addOption(disableOption);
+    parser.addOption(listOption);
+    parser.addOption(scheduleOption);
+
+    // Add positional arguments for 'add' command
+    parser.addPositionalArgument("sourceIP", "Source IP for the rule");
+    parser.addPositionalArgument("destIP", "Destination IP for the rule");
+    parser.addPositionalArgument("port", "Port for the rule");
+
+    // Parse the arguments
+    parser.process(app);
+
     // Connect to system D-Bus
     QDBusConnection bus = QDBusConnection::systemBus();
     if (!bus.isConnected()) {
-        std::cerr << "Error: Unable to connect to D-Bus system bus." << std::endl;
+        cerr << "Error: Unable to connect to D-Bus system bus." << endl;
         return 1;
     }
 
     FirewallManager firewallManager(bus);
 
-    if (argc < 2) {
-        std::cerr << "Usage:\n";
-        std::cerr << argv[0] << " add <sourceIP> <destIP> <port>\n";
-        std::cerr << argv[0] << " remove <ruleID>\n";
-        std::cerr << argv[0] << " enable\n";
-        std::cerr << argv[0] << " disable\n";
-        std::cerr << argv[0] << " list\n";
-        return 1;
-    }
-
-    QString command = argv[1];
-    if (command == "add") {
-        if (argc < 5) {
-            std::cerr << "Error: Missing parameters for adding rule. Provide <sourceIP> <destIP> <port>.\n";
+    // Handle the commands based on the options
+    if (parser.isSet(addOption)) {
+        if (parser.positionalArguments().size() != 3) {
+            cerr << "Error: Missing parameters for adding rule. Provide <sourceIP> <destIP> <port>." << endl;
             return 1;
         }
-        QString sourceIP = argv[2];
-        QString destIP = argv[3];
-        QString port = argv[4];
+        QString sourceIP = parser.positionalArguments().at(0);
+        QString destIP = parser.positionalArguments().at(1);
+        QString port = parser.positionalArguments().at(2);
         firewallManager.addFirewallRule(sourceIP, destIP, port);
-    } else if (command == "remove") {
-        if (argc < 3) {
-            std::cerr << "Error: Missing rule ID for removal.\n";
+    } else if (parser.isSet(removeOption)) {
+        if (parser.positionalArguments().size() != 1) {
+            cerr << "Error: Missing rule ID for removal." << endl;
             return 1;
         }
-        QString ruleID = argv[2];
+        QString ruleID = parser.positionalArguments().at(0);
         firewallManager.removeFirewallRule(ruleID);
-    } else if (command == "enable") {
+    } else if (parser.isSet(enableOption)) {
         firewallManager.enableFirewall();
-    } else if (command == "disable") {
+    } else if (parser.isSet(disableOption)) {
         firewallManager.disableFirewall();
-    } else if (command == "list") {
+    } else if (parser.isSet(listOption)) {
         firewallManager.listFirewallRules();
-    } else {
-        std::cerr << "Error: Unknown command.\n";
-        std::cerr << "Usage:\n";
-        std::cerr << argv[0] << " add <sourceIP> <destIP> <port>\n";
-        std::cerr << argv[0] << " remove <ruleID>\n";
-        std::cerr << argv[0] << " enable\n";
-        std::cerr << argv[0] << " disable\n";
-        std::cerr << argv[0] << " list\n";
-        return 1;
+    } else if (parser.isSet(scheduleOption)) {
+        if (parser.positionalArguments().size() != 2) {
+            cerr << "Error: Invalid arguments for schedule. Provide <action> <time>" << endl;
+            return 1;
+        }
+        QString action = parser.positionalArguments().at(0);
+        QString timeString = parser.positionalArguments().at(1);
+        QDateTime scheduledTime = QDateTime::fromString(timeString, Qt::ISODate);
+
+        if (!scheduledTime.isValid()) {
+            cerr << "Error: Invalid time format. Please use ISO 8601 format (e.g., 2024-11-15T10:00:00)." << endl;
+            return 1;
+        }
+
+        firewallManager.scheduleFirewallChange(scheduledTime, action);
     }
 
     return 0;
