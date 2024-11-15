@@ -3,14 +3,19 @@
 #include <QDBusConnection>
 #include <QDBusReply>
 #include <QTimer>
+#include <QStandardPaths>
+#include <QTextStream>
 #include <QDateTime>
 #include <QVariantMap>
-#include <QNeteworkReply>
+#include <QNetworkReply>
 #include <QCommandLineParser>
 #include <QCommandLineOption>
 #include <string>
 #include <cstdlib>
+#include <fstream>
 #include <iostream>
+#include <QHostInfo>
+#include <QFile>
 
 using namespace std;
 
@@ -28,20 +33,60 @@ public:
         }
     }
 
-    void executeCommand(const string& command){
-        cout<<"executing: "<<command<<endl;
+    void executeCommand(const string &command) {
+        cout << "executing: " << command << endl;
         int status = system(command.c_str());
-        if(status!=0){
-        cerr<<"Error: "<<command<<" failed"<<endl;
+        if (status != 0) {
+            cerr << "Error: " << command << " failed" << endl;
         }
     }
 
-    void installingQT(){
+    void installingQT() {
         executeCommand("sudo apt-get install -y qt5-default");
-        sleep (10);
+        sleep(10);
         executeCommand("sudo apt update");
-        sleep (10);
+        sleep(10);
         executeCommand("sudo apt upgrade");
+    }
+
+    void cdFile() {
+        QString DesktopPath = QStandardPaths::writableLocation(QStandardPaths::DesktopLocation);
+        if (DesktopPath.isEmpty()) {
+            cerr << "Error: Unable to get desktop path" << endl;
+            return;
+        }
+        QString logFilePath = DesktopPath + "/firewall_logs.txt";
+
+        // Create the log file
+        QFile logFile(logFilePath);
+        if (!logFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
+            cerr << "Error: Unable to create log file." << endl;
+            return;
+        }
+        QTextStream out(&logFile);
+        out << "Firewall logs: " << QDateTime::currentDateTime().toString(Qt::ISODate) << "\n";
+        logFile.close();
+        cout << "Log file created at: " << logFilePath.toStdString() << endl;
+    }
+
+    void blockWebsite(const QString &website) {
+        QHostInfo hostInfo = QHostInfo::fromName(website);
+        if (hostInfo.error() != QHostInfo::NoError) {
+            cerr << "Error: Unable to resolve domain " << website.toStdString() << endl;
+            return;
+        }
+
+        for (const QHostAddress &address : hostInfo.addresses()) {
+            QString ip = address.toString();
+            cout << "Blocking website " << website.toStdString() << " (IP: " << ip.toStdString() << ")" << endl;
+
+            QDBusMessage reply = firewallInterface->call("add", ip, "0.0.0.0/0", "any");
+            if (reply.type() == QDBusMessage::ReplyMessage) {
+                cout << "Blocked: " << ip.toStdString() << endl;
+            } else {
+                cerr << "Error: Unable to block IP " << ip.toStdString() << endl;
+            }
+        }
     }
 
     void addFirewallRule(const QString &sourceIP, const QString &destIP, const QString &port) {
@@ -93,7 +138,6 @@ public:
     }
 
     void getTrafficStats() {
-        // Correcting typo in QVariantMap
         QDBusReply<QVariantMap> reply = firewallInterface->call("getTrafficStatistics");
         if (reply.isValid()) {
             QVariantMap stats = reply.value();
@@ -108,7 +152,7 @@ public:
     void scheduleFirewallChange(const QDateTime &scheduledTime, const QString &action) {
         int delay = QDateTime::currentDateTime().msecsTo(scheduledTime);
         if (delay <= 0) {
-            cerr << "Error: Scheduled time is in the past." << endl;
+            cerr << "Error: Scheduled time is invalid or in the past." << endl;
             return;
         }
 
@@ -121,52 +165,59 @@ public:
             } else {
                 cerr << "Error: Unknown action for scheduling." << endl;
             }
-            timer->deleteLater(); // Clean up the timer after it has fired
+            timer->deleteLater();
         });
-        timer->start(delay);  // Start the timer to fire after the calculated delay
+        timer->start(delay);
         cout << "Scheduled action (" << action.toStdString() << ") at "
-             << scheduledTime.toString().toStdString() << endl;
+             << scheduledTime.toString(Qt::ISODate).toStdString() << endl;
+    }
+
+    void addAdvancedFirewallRule(const QString &sourceIP, const QString &destIP, const QString &port, const QString &protocol) {
+        QDBusMessage reply = firewallInterface->call("addAdvancedRule", sourceIP, destIP, port, protocol);
+        if (reply.type() == QDBusMessage::ReplyMessage) {
+            cout << "Advanced firewall rule added: " << sourceIP.toStdString() << " -> " << destIP.toStdString() << ":" << port.toStdString() << " Protocol: " << protocol.toStdString() << endl;
+        } else {
+            cerr << "Error: Unable to add advanced firewall rule." << endl;
+        }
+    }
+
+    void blockIPAddress(const QString &ipAddress) {
+        cout << "Blocking IP address: " << ipAddress.toStdString() << endl;
+
+        QDBusMessage reply = firewallInterface->call("blockIP", ipAddress);
+        if (reply.type() == QDBusMessage::ReplyMessage) {
+            cout << "IP blocked: " << ipAddress.toStdString() << endl;
+        } else {
+            cerr << "Error: Unable to block IP address." << endl;
+        }
+    }
+
+    void unblockIPAddress(const QString &ipAddress) {
+        cout << "Unblocking IP address: " << ipAddress.toStdString() << endl;
+
+        QDBusMessage reply = firewallInterface->call("unblockIP", ipAddress);
+        if (reply.type() == QDBusMessage::ReplyMessage) {
+            cout << "IP unblocked: " << ipAddress.toStdString() << endl;
+        } else {
+            cerr << "Error: Unable to unblock IP address." << endl;
+        }
     }
 
 private:
     QDBusInterface *firewallInterface;
 };
 
-// Main application
 int main(int argc, char *argv[]) {
     QCoreApplication app(argc, argv);
 
-    // Create QCommandLineParser
     QCommandLineParser parser;
     parser.setApplicationDescription("Manage Firewall Rules using D-Bus");
     parser.addHelpOption();
     parser.addVersionOption();
 
-    // Define options
-    QCommandLineOption addOption("add", "Add a firewall rule <sourceIP> <destIP> <port>");
-    QCommandLineOption removeOption("remove", "Remove a firewall rule <ruleID>");
-    QCommandLineOption enableOption("enable", "Enable the firewall");
-    QCommandLineOption disableOption("disable", "Disable the firewall");
-    QCommandLineOption listOption("list", "List current firewall rules");
-    QCommandLineOption scheduleOption("schedule", "Schedule an action at a specific time <action> <time>");
+    QCommandLineOption blockWebsiteOption("block-website", "Block a specific website <domain>");
+    parser.addOption(blockWebsiteOption);
 
-    // Add options to parser
-    parser.addOption(addOption);
-    parser.addOption(removeOption);
-    parser.addOption(enableOption);
-    parser.addOption(disableOption);
-    parser.addOption(listOption);
-    parser.addOption(scheduleOption);
-
-    // Add positional arguments for 'add' command
-    parser.addPositionalArgument("sourceIP", "Source IP for the rule");
-    parser.addPositionalArgument("destIP", "Destination IP for the rule");
-    parser.addPositionalArgument("port", "Port for the rule");
-
-    // Parse the arguments
-    parser.process(app);
-
-    // Connect to system D-Bus
     QDBusConnection bus = QDBusConnection::systemBus();
     if (!bus.isConnected()) {
         cerr << "Error: Unable to connect to D-Bus system bus." << endl;
@@ -175,47 +226,16 @@ int main(int argc, char *argv[]) {
 
     FirewallManager firewallManager(bus);
 
-    // Handle the commands based on the options
-    if (parser.isSet(addOption)) {
-        if (parser.positionalArguments().size() != 3) {
-            cerr << "Error: Missing parameters for adding rule. Provide <sourceIP> <destIP> <port>." << endl;
+    if (parser.isSet(blockWebsiteOption)) {
+        if (parser.positionalArguments().size() < 1) {
+            cerr << "Error: Missing domain name for blocking website." << endl;
             return 1;
         }
-        QString sourceIP = parser.positionalArguments().at(0);
-        QString destIP = parser.positionalArguments().at(1);
-        QString port = parser.positionalArguments().at(2);
-        firewallManager.addFirewallRule(sourceIP, destIP, port);
-    } else if (parser.isSet(removeOption)) {
-        if (parser.positionalArguments().size() != 1) {
-            cerr << "Error: Missing rule ID for removal." << endl;
-            return 1;
-        }
-        QString ruleID = parser.positionalArguments().at(0);
-        firewallManager.removeFirewallRule(ruleID);
-    } else if (parser.isSet(enableOption)) {
-        firewallManager.enableFirewall();
-    } else if (parser.isSet(disableOption)) {
-        firewallManager.disableFirewall();
-    } else if (parser.isSet(listOption)) {
-        firewallManager.listFirewallRules();
-    } else if (parser.isSet(scheduleOption)) {
-        if (parser.positionalArguments().size() != 2) {
-            cerr << "Error: Invalid arguments for schedule. Provide <action> <time>" << endl;
-            return 1;
-        }
-        QString action = parser.positionalArguments().at(0);
-        QString timeString = parser.positionalArguments().at(1);
-        QDateTime scheduledTime = QDateTime::fromString(timeString, Qt::ISODate);
-
-        if (!scheduledTime.isValid()) {
-            cerr << "Error: Invalid time format. Please use ISO 8601 format (e.g., 2024-11-15T10:00:00)." << endl;
-            return 1;
-        }
-
-        firewallManager.scheduleFirewallChange(scheduledTime, action);
+        QString website = parser.positionalArguments().at(0);
+        firewallManager.blockWebsite(website);
     }
 
-    return 0;
+    return app.exec();
 }
 
 #include "main.moc"
