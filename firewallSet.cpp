@@ -10,12 +10,17 @@
 #include <QNetworkReply>
 #include <QCommandLineParser>
 #include <QCommandLineOption>
+#include <QSystemTrayIcon>
+#include <QApplication>
+#include <QMessageBox>
 #include <string>
 #include <cstdlib>
 #include <fstream>
 #include <iostream>
 #include <QHostInfo>
 #include <QFile>
+#include <QProcess>
+
 
 using namespace std;
 
@@ -43,6 +48,10 @@ public:
 
     void installingQT() {
         executeCommand("sudo apt-get install -y qt5-default");
+        sleep(5);
+        executeCommand("sudo systemctl status firewalld");
+        sleep(5);
+        executeCommand("sudo systemctl start firewalld");
         sleep(10);
         executeCommand("sudo apt update");
         sleep(10);
@@ -203,13 +212,22 @@ public:
         }
     }
 
+    void FirewallManager::sendNotification(const QString &message) {
+    QProcess process;
+    process.start("notify-send", QStringList() << "Firewall Alert" << message);
+    process.waitForFinished();
+    }
+    void ruleViolationDetected(const QString &rule, const QString &violationDetail) {
+    QString message = "Rule violation detected: " + rule + " - " + violationDetail;
+    sendNotification(message);  // Send a desktop notification
+    }
+
 private:
     QDBusInterface *firewallInterface;
 };
 
 int main(int argc, char *argv[]) {
     QCoreApplication app(argc, argv);
-
     QCommandLineParser parser;
     parser.setApplicationDescription("Manage Firewall Rules using D-Bus");
     parser.addHelpOption();
@@ -234,6 +252,8 @@ int main(int argc, char *argv[]) {
         QString website = parser.positionalArguments().at(0);
         firewallManager.blockWebsite(website);
     }
+    firewallManager.ruleViolationDetected("Blocked Port", "Unauthorized access attempt detected on port 8080");
+    
 
     return app.exec();
 }
