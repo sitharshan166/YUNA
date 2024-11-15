@@ -9,6 +9,7 @@
 #include <QCommandLineParser>
 #include <QCommandLineOption>
 #include <string>
+#include <cstdlib>
 #include <iostream>
 
 using namespace std;
@@ -25,6 +26,22 @@ public:
             cerr << "Error: Unable to get firewalld interface." << endl;
             exit(1);
         }
+    }
+
+    void executeCommand(const string& command){
+        cout<<"executing: "<<command<<endl;
+        int status = system(command.c_str());
+        if(status!=0){
+        cerr<<"Error: "<<command<<" failed"<<endl;
+        }
+    }
+
+    void installingQT(){
+        executeCommand("sudo apt-get install -y qt5-default");
+        sleep (10);
+        executeCommand("sudo apt update");
+        sleep (10);
+        executeCommand("sudo apt upgrade");
     }
 
     void addFirewallRule(const QString &sourceIP, const QString &destIP, const QString &port) {
