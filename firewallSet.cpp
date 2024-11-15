@@ -4,10 +4,12 @@
 #include <QDBusReply>
 #include <QTimer>
 #include <QDateTime>
-#include <iostream>
+#include <QVariantMap>
+#include <QNeteworkReply>
 #include <QCommandLineParser>
 #include <QCommandLineOption>
 #include <string>
+#include <iostream>
 
 using namespace std;
 
@@ -70,6 +72,19 @@ public:
             }
         } else {
             cerr << "Error: Unable to retrieve firewall rules." << endl;
+        }
+    }
+
+    void getTrafficStats() {
+        // Correcting typo in QVariantMap
+        QDBusReply<QVariantMap> reply = firewallInterface->call("getTrafficStatistics");
+        if (reply.isValid()) {
+            QVariantMap stats = reply.value();
+            cout << "Traffic statistics:" << endl;
+            cout << "Packets: " << stats["packets"].toInt() << endl;
+            cout << "Bytes: " << stats["bytes"].toInt() << endl;
+        } else {
+            cerr << "Error: Unable to retrieve traffic statistics." << endl;
         }
     }
 
