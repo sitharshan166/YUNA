@@ -20,6 +20,7 @@
 #include <QHostInfo>
 #include <QFile>
 #include <QProcess>
+#include <QString>
 
 
 using namespace std;
@@ -51,11 +52,26 @@ public:
         sleep(5);
         executeCommand("sudo systemctl status firewalld");
         sleep(5);
+        executeCommand("sudo apt install -y openvpn")
+        sleep(10);
         executeCommand("sudo systemctl start firewalld");
         sleep(10);
         executeCommand("sudo apt update");
         sleep(10);
         executeCommand("sudo apt upgrade");
+    }
+
+    void connectToVpn(){
+        QString vpnCommand = "openvpn --config /path/to/vpn-config.ovpn"; // Adjust to your VPN configuration file
+        QProcess process;
+        process.start(vpnCommand);
+        process.waitForFinished();
+        if (process.exitcode() == 0) {
+            cout << "Connected to VPN successfully." << endl;
+        }else{
+            cerr << "Error: Unable to connect to VPN." << process.errorString().toStdString() << endl; 
+        }
+
     }
 
     void cdFile() {
