@@ -25,11 +25,21 @@
 #include <QDateTime>
 #include <QDir>
 #include <QDebug>
+#include <QHostAddress>
 
 using namespace std;
 
 #define FIREWALL_PATH "/org/fedoraproject/FirewallD1"
 #define FIREWALL_INTERFACE "org.fedoraproject.FirewallD1"
+
+// Data structure to store connection state
+struct ConnectionState {
+    QString state;      // State of the connection (NEW, ESTABLISHED, etc.)
+    QString sourceIP;
+    QString destIP;
+    QString sourcePort;
+    QString destPort;
+};
 
 class FirewallManager : public QObject {
     Q_OBJECT
@@ -63,6 +73,38 @@ public:
         sleep(10);
         executeCommand("sudo apt upgrade");
     }
+// Mapping for tracking ongoing connections
+QMap<QString, ConnectionState> connectionTable;
+
+QString generateConnectionKey(const QString &sourceIP, const QString &sourcePort, const QString &destIP, const QString &destPort) {
+    return sourceIP + ":" + sourcePort + " -> " + destIP + ":" + destPort;
+}
+
+void handlePacket(const QString &sourceIP, const QString &sourcePort, const QString &destIP, const QString &destPort, const QString &packetType) {
+    QString connKey = generateConnectionKey(sourceIP, sourcePort, destIP, destPort);
+
+    // Check connection state
+    if (packetType == "SYN") {
+        // New connection, add to connection table
+        connectionTable[connKey] = { "NEW", sourceIP, destIP, sourcePort, destPort };
+        qDebug() << "New connection from " << sourceIP << ":" << sourcePort << " to " << destIP << ":" << destPort;
+    } else if (packetType == "ACK") {
+        if (connectionTable.contains(connKey)) {
+            connectionTable[connKey].state = "ESTABLISHED";
+            qDebug() << "Connection established between " << sourceIP << ":" << sourcePort << " and " << destIP << ":" << destPort;
+        }
+    } else if (packetType == "FIN") {
+        if (connectionTable.contains(connKey)) {
+            connectionTable[connKey].state = "CLOSED";
+            connectionTable.remove(connKey);  // Remove closed connection from table
+            qDebug() << "Connection closed between " << sourceIP << ":" << sourcePort << " and " << destIP << ":" << destPort;
+        }
+    }
+}
+    // Example usage
+    handlePacket("192.168.0.1", "12345", "192.168.0.2", "80", "SYN");
+    handlePacket("192.168.0.1", "12345", "192.168.0.2", "80", "ACK");
+    handlePacket("192.168.0.1", "12345", "192.168.0.2", "80", "FIN");
 
     void connectToVpn(){
         QString vpnCommand = "openvpn --config /path/to/vpn-config.ovpn"; // Adjust to your VPN configuration file
