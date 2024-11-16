@@ -21,7 +21,10 @@
 #include <QFile>
 #include <QProcess>
 #include <QString>
-
+#include <QTextStream>
+#include <QDateTime>
+#include <QDir>
+#include <QDebug>
 
 using namespace std;
 
@@ -52,7 +55,7 @@ public:
         sleep(5);
         executeCommand("sudo systemctl status firewalld");
         sleep(5);
-        executeCommand("sudo apt install -y openvpn")
+        executeCommand("sudo apt install -y openvpn");
         sleep(10);
         executeCommand("sudo systemctl start firewalld");
         sleep(10);
@@ -73,6 +76,106 @@ public:
         }
 
     }
+
+    // Function to log messages to a file
+    void logMessage(const QString &message) {
+        QString logDirPath = QDir::homePath() + "/FirewallManagerLogs";
+        QDir logDir(logDirPath);
+    
+        if (!logDir.exists()) {
+            if (!logDir.mkpath(".")) {
+                qCritical() << "Failed to create log directory:" << logDirPath;
+                return;
+            }
+    }
+
+        QString logFilePath = logDir.filePath("firewall_manager.log");
+        QFile logFile(logFilePath);
+
+        if (!logFile.open(QIODevice::Append | QIODevice::Text)) {
+            qCritical() << "Failed to open log file:" << logFilePath;
+            return;
+        }
+
+        QTextStream out(&logFile);
+        out << QDateTime::currentDateTime().toString(Qt::ISODate) << ": " << message << "\n";
+        logFile.close();
+    }
+
+// Function to parse a simple configuration file
+    QMap<QString, QString> loadConfig(const QString &configFilePath) {
+        QMap<QString, QString> configMap;
+        QFile configFile(configFilePath);
+
+        if (!configFile.exists()) {
+            qWarning() << "Configuration file not found:" << configFilePath;
+            return configMap;
+        }
+
+        if (!configFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
+            qWarning() << "Unable to open configuration file:" << configFilePath;
+            return configMap;
+        }
+
+        QTextStream in(&configFile);
+        while (!in.atEnd()) {
+            QString line = in.readLine().trimmed();
+            if (line.isEmpty() || line.startsWith("#")) {
+                continue; // Skip empty lines or comments
+            }
+
+            QStringList keyValue = line.split("=");
+            if (keyValue.size() == 2) {
+                configMap[keyValue[0].trimmed()] = keyValue[1].trimmed();
+            } else {
+                qWarning() << "Malformed line in config file:" << line;
+            }
+        }
+
+        configFile.close();
+        return configMap;
+    }
+
+    // Function to save a simple configuration file
+    bool saveConfig(const QString &configFilePath, const QMap<QString, QString> &configMap) {
+        QFile configFile(configFilePath);
+
+        if (!configFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
+            qWarning() << "Unable to open configuration file for writing:" << configFilePath;
+            return false;
+        }
+
+        QTextStream out(&configFile);
+        for (auto it = configMap.begin(); it != configMap.end(); ++it) {
+            out << it.key() << "=" << it.value() << "\n";
+        }
+
+        configFile.close();
+        return true;
+    }
+
+    // Example usage within this file (optional)
+    void testUtilities() {
+        QString configPath = QDir::homePath() + "/FirewallManagerConfig/config.txt";
+
+        // Load configuration
+        QMap<QString, QString> config = loadConfig(configPath);
+        if (config.isEmpty()) {
+            qDebug() << "No configuration found, creating a new one.";
+            config["vpnConfigPath"] = "/path/to/vpn-config.ovpn";
+            config["logLevel"] = "DEBUG";
+            saveConfig(configPath, config);
+        } else {
+            qDebug() << "Loaded configuration:";
+            for (auto it = config.begin(); it != config.end(); ++it) {
+                qDebug() << it.key() << ":" << it.value();
+            }
+        }
+
+        // Log a test message
+        logMessage("FirewallManager started successfully.");
+    }
+
 
     void cdFile() {
         QString DesktopPath = QStandardPaths::writableLocation(QStandardPaths::DesktopLocation);
@@ -275,3 +378,4 @@ int main(int argc, char *argv[]) {
 }
 
 #include "main.moc"
+
