@@ -51,6 +51,57 @@ public:
             exit(1);
         }
     }
+    
+    void getGeoIP(const QString &ip) {
+        QUrl url(QString("http://ip-api.com/json/%1").arg(ip));
+        QNetworkRequest request(url);
+        QNetworkReply *reply = manager->get(request);
+        connect(reply, &QNetworkReply::finished, this, &FirewallManager::onGeoLocationReceived);
+    }
+
+    void blockIPAddress(const QString &ipAddress) {
+        cout << "Blocking IP address: " << ipAddress.toStdString() << endl;
+        QFile file("blocked_ips.json");
+        if (file.open(QIODevice::ReadWrite)) {
+            QJsonDocument doc = QJsonDocument::fromJson(file.readAll());
+            QJsonObject obj = doc.object();
+            QJsonArray blockedArray = obj["blocked_ips"].toArray();
+            blockedArray.append(ipAddress);
+            obj["blocked_ips"] = blockedArray;
+            file.resize(0);
+            file.write(QJsonDocument(obj).toJson());
+            file.close();
+            qDebug() << "Blocked IP: " << ipAddress;
+        } else {
+            qWarning() << "Failed to write to block list.";
+        }
+    }
+    private slots:
+    void onGeoLocationReceived() {
+        QNetworkReply *reply = qobject_cast<QNetworkReply *>(sender());
+        if (!reply || reply->error() != QNetworkReply::NoError) {
+            qWarning() << "Error fetching geolocation data.";
+            return;
+        }
+
+        QByteArray data = reply->readAll();
+        QJsonDocument jsonDoc = QJsonDocument::fromJson(data);
+        QJsonObject jsonObject = jsonDoc.object();
+        QString country = jsonObject["country"].toString();
+        QString city = jsonObject["city"].toString();
+
+        qDebug() << "IP Country: " << country << ", City: " << city;
+        if (country == "BlockedCountry") {
+            blockIPAddress(jsonObject["query"].toString());
+        }
+        reply->deleteLater();
+    }
+
+    private:
+        QDBusInterface *firewallInterface;
+        QNetworkAccessManager *manager;
+    };
+
 
     void executeCommand(const string &command) {
         cout << "executing: " << command << endl;
@@ -389,6 +440,8 @@ private:
 
 int main(int argc, char *argv[]) {
     QCoreApplication app(argc, argv);
+    QString testIP = "8.8.8.8"; // Example IP to test geolocation
+    manager.getGeoIP(testIP);
     QCommandLineParser parser;
     parser.setApplicationDescription("Manage Firewall Rules using D-Bus");
     parser.addHelpOption();
