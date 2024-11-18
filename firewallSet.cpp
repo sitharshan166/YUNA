@@ -310,6 +310,30 @@ void handlePacket(const QString &sourceIP, const QString &sourcePort, const QStr
         }
     }
 
+    void analysisTrafficForAnomalies(const ConnectionState &connection) {
+
+        int connectionThreshold = 100;
+        int connectioncount - connectionTable.count(connection.SourceIP);
+        if (connectioncount > connectionThreshold) {
+            qWarnning() << "Anomaly detected: " << connection.SourceIP << " has made " << connectioncount<< " connections in the last " << connectionThreshold << " seconds.";
+            blockWebsite(connection.SourceIP);
+            notify-send("Anomaly detected: High number of connections from IP " + connection.sourceIP);
+            }
+    }
+   
+    void detectPacketSizeAnomaly(int packetSize) {
+        int averagesize = 512;
+        int packetThreshold = 5;
+
+        if (packetSize > averagesize * packetThreshold) {
+            qWarning() << "Anomaly detected: Packet size " << packetSize;
+            blockWebsite(connection.SourceIP);
+            notify-send("Anomaly detected: Large packet size from IP " + connection.sourceIP);
+        }
+    }
+
+    
+
     void addFirewallRule(const QString &sourceIP, const QString &destIP, const QString &port) {
         QDBusMessage reply = firewallInterface->call("add", sourceIP, destIP, port);
         if (reply.type() == QDBusMessage::ReplyMessage) {
@@ -439,6 +463,7 @@ private:
 };
 
 int main(int argc, char *argv[]) {
+
     QCoreApplication app(argc, argv);
     QString testIP = "8.8.8.8"; // Example IP to test geolocation
     manager.getGeoIP(testIP);
