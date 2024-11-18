@@ -52,6 +52,59 @@ public:
         }
     }
     
+    void addNatRule(const QString &sourceIP, const QString &destIP, const QString &port) {
+        // Create a new nat rule
+        QDBusMessage reply  = firewallInterface->call("AddNatRule", sourceIP, destIP, port);
+        if (reply.type() == QDBusMessage::replyMessage) {
+            cout << "Nat rule added successfully." << SourceIP.tostdString() << "->"<<destIP.tostdString()<< ":" << port.toStdString() << endl;
+        }else{
+            cerr << "ERROR: Unable to add NAT rule." << endl;
+        }
+    }
+
+    void removeNatRule(const QString &ruleID) {
+    QDBusMessage reply = firewallInterface->call("removeNatRule", ruleID);
+    if (reply.type() == QDBusMessage::ReplyMessage) {
+        cout << "NAT rule removed: " << ruleID.toStdString() << endl;
+    } else {
+        cerr << "Error: Unable to remove NAT rule." << endl;
+        }       
+    }   
+
+    void ConfigureNat(const QString &externalInterface, const QString &internalNetwork) {
+        // Create a new nat rule
+        QString command = QString("sudo iptables -t nat -A POSTROUTING -o %1 -j MASQUERADE")
+                                    .arg(internalNetwork)
+                                    .ags(externalInterface);
+        Qprocess process;
+        process.start(command);
+        process.waitForFinished();
+        if (process.exitCode() == 0) {
+            qDebug()<<"NAT Configured Successfully";
+            } else
+            {
+                qCritial()<< "Error configuring NAT: " << process.errorString();
+            }
+    }
+
+    void enableNat(const QString &externalInterface, const QString &internalNetwork) {
+        // Enable NAT on the specified interface
+        ConfigureNat(externallInterface, internalNetwork);
+
+    }
+
+    void disableNat(const QString &externalInterface, const QString &internalNetwork) {
+        // Disable NAT on the specified interface
+        QString command = QString("sudo iptables -t nat -D POSTROUTING -s %1 -j MASQUERADE").arg(ruleID);
+        QProcess::execute(command );
+        if (execute.exitCode() == 0) {
+            qDebug()<<"NAT Disabled Successfully";
+            } else
+            {
+                qCritial()<< "Error disabling NAT: " << execute.errorString();
+            }
+        }
+
     void getGeoIP(const QString &ip) {
         QUrl url(QString("http://ip-api.com/json/%1").arg(ip));
         QNetworkRequest request(url);
