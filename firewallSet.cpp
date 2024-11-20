@@ -178,7 +178,7 @@ public:
         executeCommand("sudo apt upgrade");
     }
 // Mapping for tracking ongoing connections
-QMap<QString, ConnectionState> connectionTable;
+QHash<QString, ConnectionState> connectionTable;
 
 QString generateConnectionKey(const QString &sourceIP, const QString &sourcePort, const QString &destIP, const QString &destPort) {
     return sourceIP + ":" + sourcePort + " -> " + destIP + ":" + destPort;
@@ -249,7 +249,7 @@ void handlePacket(const QString &sourceIP, const QString &sourcePort, const QStr
     }
 
 // Function to parse a simple configuration file
-    QMap<QString, QString> loadConfig(const QString &configFilePath) {
+    QHash<QString, QString> loadConfig(const QString &configFilePath) {
         QMap<QString, QString> configMap;
         QFile configFile(configFilePath);
 
@@ -499,6 +499,19 @@ void handlePacket(const QString &sourceIP, const QString &sourcePort, const QStr
         } else {
             cerr << "Error: Unable to unblock IP address." << endl;
         }
+    }
+
+    void cleanupExpiredConnection(){
+        QDBusMessage reply = firewallInterface->call("cleanupExpiredConnections");
+        for (auto it = connectionTable.begin();it != connectionTable.end();){
+            if(it.value().lastupdate.secsTo(now) > TIMEOUT_SECONDS)
+            qDebug()<<"Removing expired connection: " << it.key();
+            it = connectionTable.erase(it);
+            }else{
+                ++it;
+            }
+        }
+            
     }
 
     void FirewallManager::sendNotification(const QString &message) {
