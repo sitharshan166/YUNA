@@ -14,6 +14,9 @@
 #include <QApplication>
 #include <QMessageBox>
 #include <string>
+#include <vector>
+#include <cmath>
+#include <ctime>
 #include <cstdlib>
 #include <fstream>
 #include <iostream>
@@ -31,6 +34,14 @@ using namespace std;
 
 #define FIREWALL_PATH "/org/fedoraproject/FirewallD1"
 #define FIREWALL_INTERFACE "org.fedoraproject.FirewallD1"
+
+struct NetworkFeatures {
+    double packetRate;
+    double packetSize;
+    double connectionDuration;
+    double portNumber;
+};
+
 
 // Data structure to store connection state
 struct ConnectionState {
@@ -51,7 +62,48 @@ public:
             exit(1);
         }
     }
-    
+    private:
+    // Add these as private members
+    NeuralNetwork* neuralNetwork;
+    vector<vector<double>> trainingData;
+    vector<vector<double>> trainingLabels;
+    public:
+    void initializeNeuralNetwork() {
+        // Initialize with 4 inputs (features), 6 hidden neurons, 1 output (threat score)
+        neuralNetwork = new NeuralNetwork(4, 6, 1);
+        
+        // Initialize random seed
+        srand(time(0));
+    }
+
+    NetworkFeatures extractFeatures(const ConnectionState& connection) {
+        NetworkFeatures features;
+        
+        // Convert port to normalized value
+        features.portNumber = connection.destPort.toDouble() / 65535.0;
+        
+        // Calculate packet rate (example calculation)
+        QDateTime now = QDateTime::currentDateTime();
+        int timeDiff = connection.lastUpdate.secsTo(now);
+        features.packetRate = connection.packetCount / (timeDiff > 0 ? timeDiff : 1);
+        
+        // Normalize packet size
+        features.packetSize = connection.totalBytes / (1024.0 * 1024.0); // Normalize to MB
+        
+        // Calculate connection duration in hours and normalize
+        features.connectionDuration = timeDiff / 3600.0;
+        
+        return features;
+    }
+
+    vector<double> convertToVector(const NetworkFeatures& features) {
+        vector<double> vec;
+        vec.push_back(features.packetRate);
+        vec.push_back(features.packetSize);
+        vec.push_back(features.connectionDuration);
+        vec.push_back(features.portNumber);
+        return vec;
+    }
     void addNatRule(const QString &sourceIP, const QString &destIP, const QString &port) {
         // Create a new nat rule
         QDBusMessage reply  = firewallInterface->call("AddNatRule", sourceIP, destIP, port);
@@ -191,6 +243,33 @@ void handlePacket(const QString &sourceIP, const QString &sourcePort, const QStr
     if (packetType == "SYN") {
         // New connection, add to connection table
         connectionTable[connKey] = { "NEW", sourceIP, destIP, sourcePort, destPort };
+          // Extract features and analyze with neural network
+            NetworkFeatures features = extractFeatures(connectionTable[connKey]);
+            vector<double> inputVector = convertToVector(features);
+            
+            // Forward propagate through neural network
+            neuralNetwork->forwardPropagate(inputVector);
+            
+            // Get the threat score from the neural network
+            double threatScore = neuralNetwork->outputLayer[0][0];
+            
+            // Take action based on threat score
+            if (threatScore > 0.8) {
+                QString message = "High threat detected from " + sourceIP;
+                blockIPAddress(sourceIP);
+                logMessage(message);
+                sendNotification(message);
+            }
+            else if (threatScore > 0.5) {
+                analysisTrafficForAnomalies(connectionTable[connKey]);
+            }
+            
+            // Add to training data for future learning
+            vector<double> label = {threatScore > 0.5 ? 1.0 : 0.0};
+            trainingData.push_back(inputVector);
+            trainingLabels.push_back(label);
+        }
+        // ... (rest of your existing handlePacket code)
         qDebug() << "New connection from " << sourceIP << ":" << sourcePort << " to " << destIP << ":" << destPort;
     } else if (packetType == "ACK") {
         if (connectionTable.contains(connKey)) {
@@ -233,6 +312,7 @@ void handlePacket(const QString &sourceIP, const QString &sourcePort, const QStr
                 qCritical() << "Failed to create log directory:" << logDirPath;
                 return;
             }
+        }
     }
 
         QString logFilePath = logDir.filePath("firewall_manager.log");
@@ -501,18 +581,41 @@ void handlePacket(const QString &sourceIP, const QString &sourcePort, const QStr
         }
     }
 
-    void cleanupExpiredConnection(){
-        QDBusMessage reply = firewallInterface->call("cleanupExpiredConnections");
-        for (auto it = connectionTable.begin();it != connectionTable.end();){
-            if(it.value().lastupdate.secsTo(now) > TIMEOUT_SECONDS)
-            qDebug()<<"Removing expired connection: " << it.key();
-            it = connectionTable.erase(it);
-            }else{
+    void trainNeuralNetwork() {
+        if (trainingData.size() > 100) {  // Train after collecting enough samples
+            neuralNetwork->train(trainingData, trainingLabels, 1000, 0.1);
+            
+            // Clear training data after successful training
+            trainingData.clear();
+            trainingLabels.clear();
+            
+            logMessage("Neural network training completed");
+        }
+    }
+
+     void cleanupExpiredConnections() {
+        QDateTime now = QDateTime::currentDateTime();
+        
+        for (auto it = connectionTable.begin(); it != connectionTable.end();) {
+            if (it.value().lastUpdate.secsTo(now) > TIMEOUT_SECONDS) {
+                // Before removing, add to training data
+                NetworkFeatures features = extractFeatures(it.value());
+                vector<double> inputVector = convertToVector(features);
+                vector<double> label = {it.value().wasBlocked ? 1.0 : 0.0};
+                
+                trainingData.push_back(inputVector);
+                trainingLabels.push_back(label);
+                
+                it = connectionTable.erase(it);
+            } else {
                 ++it;
             }
         }
-            
+        
+        // Try to train the network after cleanup
+        trainNeuralNetwork();
     }
+};
 
     void FirewallManager::sendNotification(const QString &message) {
     QProcess process;
@@ -548,6 +651,13 @@ int main(int argc, char *argv[]) {
     }
 
     FirewallManager firewallManager(bus);
+    firewallManager.initializeNeuralNetwork();  // Initialize the neural network
+
+    // Set up a timer for periodic training
+    QTimer trainingTimer;
+    QObject::connect(&trainingTimer, &QTimer::timeout, 
+                    &firewallManager, &FirewallManager::trainNeuralNetwork);
+    trainingTimer.start(3600000);  
 
     if (parser.isSet(blockWebsiteOption)) {
         if (parser.positionalArguments().size() < 1) {
@@ -564,4 +674,9 @@ int main(int argc, char *argv[]) {
 }
 
 #include "main.moc"
+
+
+
+
+
 
