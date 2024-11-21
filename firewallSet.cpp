@@ -62,6 +62,21 @@ public:
             exit(1);
         }
     }
+     void checkInternetConnectivity() {
+        QNetworkRequest request(QUrl("http://www.google.com"));
+        QNetworkReply *reply = networkManager->get(request);
+
+        connect(reply, &QNetworkReply::finished, this, [reply, this]() {
+            if (reply->error() == QNetworkReply::NoError) {
+                logInfo("Internet is available.");
+                // You can emit a signal or call another function here if needed
+            } else {
+                logError("Internet is not available: " + reply->errorString());
+            }
+            reply->deleteLater();
+        });
+    }
+
     private:
     // Add these as private members
     NeuralNetwork* neuralNetwork;
@@ -104,6 +119,22 @@ public:
         vec.push_back(features.portNumber);
         return vec;
     }
+
+        // Log an error message
+    void logError(const QString &message) {
+        Logger::log("ERROR: " + message);
+    }
+
+    // Log a warning message
+    void logWarning(const QString &message) {
+        Logger::log("WARNING: " + message);
+    }
+
+    // Log an info message
+    void logInfo(const QString &message) {
+        Logger::log("INFO: " + message);
+    }
+
     void addNatRule(const QString &sourceIP, const QString &destIP, const QString &port) {
         // Create a new nat rule
         QDBusMessage reply  = firewallInterface->call("AddNatRule", sourceIP, destIP, port);
@@ -652,6 +683,10 @@ int main(int argc, char *argv[]) {
 
     FirewallManager firewallManager(bus);
     firewallManager.initializeNeuralNetwork();  // Initialize the neural network
+
+    // Check internet connectivity
+    firewallManager.checkInternetConnectivity();
+
 
     // Set up a timer for periodic training
     QTimer trainingTimer;
