@@ -153,7 +153,40 @@ public:
         cerr << "Error: Unable to remove NAT rule." << endl;
         }       
     }   
+    bool panicModeEnabled = false;
 
+    void togglePanicMode(){
+        if(panicModeEnabled){
+            panicModeEnabled = false;
+            unblockAllTrafic();
+            logInfo("Panic mode disabled.");
+        }else{
+            panicModeEnabled = true;
+            blockAllTraffic();
+            logInfo("Panic mode enabled.");
+        }
+    }
+
+    void blockAllTraffic(){
+        // Block all incoming and outgoing traffic
+        addFirewallRule("block","in","all","all","all");
+        addFirewallRule("block","out","all","all","all");
+    }
+
+    void unblockAllTraffic()
+    {
+    // Remove rules to unblock all incoming traffic
+    removeFirewallRule("block", "in", "all", "all", "all");
+    // Remove rules to unblock all outgoing traffic
+    removeFirewallRule("block", "out", "all", "all", "all");
+    }
+
+    void logPanicModeEvent(){
+        QFile logfile("panic_modelog.txt");
+        if(logfile.open(QFile::WriteOnly | QFile::Append | QIODevice::Text)) {
+            QTextStream out(&logfile);
+            out << "Panic mode event occurred at " << QDateTime::currentDateTime().toString("yyyy");
+    }
     void ConfigureNat(const QString &externalInterface, const QString &internalNetwork) {
         // Create a new nat rule
         QString command = QString("sudo iptables -t nat -A POSTROUTING -o %1 -j MASQUERADE")
