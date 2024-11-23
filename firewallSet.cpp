@@ -187,6 +187,37 @@ public:
             QTextStream out(&logfile);
             out << "Panic mode event occurred at " << QDateTime::currentDateTime().toString("yyyy");
     }
+
+    void blockICMP(){
+        QDBusMessage reply = firewallInterface->call("addRule""block", "in", "all", "icmp");
+        if (reply.type() == QDBusMessage::ReplyMessage) {
+            qDebug() << "ICMP blocked." ;
+            } else{
+                qCritical() <<"Error: unable to add ICMP block rule." ;
+            }
+        reply = firewallInterface->call("addRule", "block", "out", "all", "icmp");
+        if (reply.type() == QDBusMessage::ReplyMessage) {
+            qDebug() << "ICMP blocked." ;
+            } else{
+                qCritical() <<"Error: unable to add ICMP block rule." ;
+            }
+    }
+
+    void unblockICMP(){
+        QDBusMessage reply = firewallInterface->call("removeRule", "block", "in","all","icmp");
+        if (reply.type() == QDBusMessage::ReplyMessage) {
+            qDebug() << "ICMP unblocked." ;
+            } else{
+                qCritical() <<"Error: unable to remove ICMP block rule." ;
+            }
+        reply = firewallInterface->call("removerule","block","out","all","icmp");
+        if (reply.type() == QDBusMessage::ReplyMessage) {
+            qDebug() << "ICMP unblocked." ;
+            } else{
+                qCritical() <<"Error: unable to remove ICMP block rule." ;
+            }
+    }
+
     void ConfigureNat(const QString &externalInterface, const QString &internalNetwork) {
         // Create a new nat rule
         QString command = QString("sudo iptables -t nat -A POSTROUTING -o %1 -j MASQUERADE")
