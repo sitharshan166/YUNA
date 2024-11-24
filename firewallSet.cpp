@@ -62,6 +62,31 @@ public:
             exit(1);
         }
     }
+
+    QString getHelpInformation() {
+
+        QString helpInfo;
+        helpInfo += "=== Firewall Manager Help ===\n";
+        helpInfo += "1. **Check Internet Connectivity**: Call `checkInternetConnectivity()` to verify if the internet is accessible.\n";
+        helpInfo += "2. **Add Firewall Rule**: Use `addFirewallRule(sourceIP, destIP, port)` to add a new rule.\n";
+        helpInfo += "3. **Remove Firewall Rule**: Use `removeFirewallRule(ruleID)` to remove an existing rule.\n";
+        helpInfo += "4. **Block IP Address**: Call `blockIPAddress(ipAddress)` to block a specific IP.\n";
+        helpInfo += "5. **Unblock IP Address**: Call `unblockIPAddress(ipAddress)` to unblock a specific IP.\n";
+        helpInfo += "6. **Enable/Disable Firewall**: Use `enableFirewall()` or `disableFirewall()` to toggle the firewall status.\n";
+        helpInfo += "7. **List Firewall Rules**: Call `listFirewallRules()` to display all current rules.\n";
+        helpInfo += "8. **Get Traffic Statistics**: Use `getTrafficStats()` to retrieve statistics about network traffic.\n";
+        helpInfo += "9. **Schedule Firewall Changes**: Use `scheduleFirewallChange(scheduledTime, action)` to schedule enabling/disabling the firewall.\n";
+        helpInfo += "10. **Get Automatic Helpers**: Call `getAutomaticHelpers()` to retrieve common commands and usage examples.\n";
+        helpInfo += "11. **Train Neural Network**: Call `trainNeuralNetwork()` to train the neural network with collected data.\n";
+        helpInfo += "12. **Toggle Panic Mode**: Use `togglePanicMode()` to quickly block or unblock all traffic.\n";
+        helpInfo += "13. **Get GeoIP Information**: Call `getGeoIP(ip)` to retrieve geographical information for a given IP.\n";
+        helpInfo += "14. **Log Messages**: Use `logMessage(message)` to log important events or messages.\n";
+        helpInfo += "15. **Exit**: Type `exit` to close the application.\n";
+
+        return helpInfo;
+        
+    }
+
      void checkInternetConnectivity() {
         QNetworkRequest request(QUrl("http://www.google.com"));
         QNetworkReply *reply = networkManager->get(request);
@@ -781,6 +806,8 @@ int main(int argc, char *argv[]) {
         cerr << "Error: Unable to connect to D-Bus system bus." << endl;
         return 1;
     }
+
+    QString helpInfo = firewallManager.getHelpInformation();
 
     FirewallManager firewallManager(bus);
     firewallManager.initializeNeuralNetwork();  // Initialize the neural network
