@@ -87,7 +87,7 @@ public:
         
     }
 
-     void checkInternetConnectivity() {
+    void checkInternetConnectivity() {
         QNetworkRequest request(QUrl("http://www.google.com"));
         QNetworkReply *reply = networkManager->get(request);
 
@@ -707,6 +707,27 @@ void handlePacket(const QString &sourceIP, const QString &sourcePort, const QStr
              << scheduledTime.toString(Qt::ISODate).toStdString() << endl;
     }
 
+    void addport(const QString &port, const QString &protocol){
+        QDBusMessage reply = firewallInterface->call("addPort", port, protocol);
+        if(reply.type() == QDBusMessage::ErrorMessage){
+            cout << "port " << port.toStdString() << " added successfully with protocol " << protocol.toStdString() << endl;
+        }else{
+            cerr << "Error: Unable to add port " << port.toStdString() << endl;
+        }
+
+    }
+
+    void removePort(const QString &port, const QString &protocol) {
+        QDBusMessage reply = firewallInterface->call("removePort", port, protocol);
+        if (reply.type() == QDBusMessage::ReplyMessage) {
+            cout << "Port " << port.toStdString() << " removed successfully." << endl;
+        } else {
+            cerr << "Error: Unable to remove port " << port.toStdString() << endl;
+        }
+
+    }
+
+
     void addAdvancedFirewallRule(const QString &sourceIP, const QString &destIP, const QString &port, const QString &protocol) {
         QDBusMessage reply = firewallInterface->call("addAdvancedRule", sourceIP, destIP, port, protocol);
         if (reply.type() == QDBusMessage::ReplyMessage) {
@@ -815,6 +836,32 @@ int main(int argc, char *argv[]) {
     // Check internet connectivity
     firewallManager.checkInternetConnectivity();
 
+    QStringList zones = firewallManager.getZones();
+    cout << "Zones:" << endl;
+    for (const QString &zone : zones) {
+        cout << "- " << zone.toStdString() << endl;
+    }
+
+    QStringList activeZones = firewallManager.getActiveZone();
+    cout << "Active Zones:" << endl;
+    for (const QString &zone : activeZones) {
+        cout << "- " << zone.toStdString() << endl;
+    }
+    QCommandLineOption addPortOption("add-port", "Add a port to the firewall <port> <protocol>", "port");
+    QCommandLineOption removePortOption("remove-port", "Remove a port from the firewall <port> <protocol>", "port");
+
+    parser.addOption(addPortOption);
+    parser.addOption(removePortOption);
+
+     if (parser.isSet(removePortOption)) {
+        if (parser.positionalArguments().size() < 2) {
+            cerr << "Error: Missing port and protocol for removing a port." << endl;
+            return 1;
+        }
+        QString port = parser.positionalArguments().at(0);
+        QString protocol = parser.positionalArguments().at(1);
+        firewallManager.removePort(port, protocol);
+    }
 
     // Set up a timer for periodic training
     QTimer trainingTimer;
