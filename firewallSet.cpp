@@ -475,6 +475,43 @@ void handlePacket(const QString &sourceIP, const QString &sourcePort, const QStr
         return true;
     }
 
+    void addInterface(const QString &zone, const QString &interface){
+        // Add a new interface to the configuration
+        QDBusMessage reply = firewallInterface->call("addInterface",zone,interface);
+        if(reply.type() == QDBusMessage::ReplyMessage) {
+            cout<< "Interface"<<interface.toStdString()<<" added to zone " << zone.toStdString() << endl;
+    } else {
+         cerr << "Error: Unable to add interface " << interface.toStdString() << " to zone " << zone.toStdString() << endl;
+       }
+    }
+
+    void changeZoneOfInterface(const QString &zone, const QString &interface){
+        // Change the zone of an interface
+        QDBusMessage reply = firewallInterface->call("changeZoneOfInterface",zone,interface);
+        if(reply.type() == QDBusMessage::ReplyMessage) {
+            cout<< "Interface"<<interface.toStdString()<<" changed to zone " << zone.toStdString() << zone.toStdString() << endl;
+            } else {
+                cerr << "Error: Unable to change zone of interface " << interface.toStdString() << endl;
+                }
+            
+    }
+
+    void ChangeZone(const QString &zone, const QString &interface){
+        // Change the zone of an interface
+        changeZoneOfInterface(zone,interface);
+    }
+
+    void removeInterface(const QString &zone, const QString &interface){
+        // Remove an interface from the configuration
+        QDBusMessage reply = firewallInterface->call("removeInterface",zone,interface);
+        if(reply.type() = QDBusMessage::ReplyMessage) {
+            cout<< "Interface"<<interface.toStdString()<<" removed from zone " << zone.toStdString() <<  " successfully." << endl;
+        } else {
+            cerr << "Error: Unable to remove interface " << interface.toStdString() << " from zone" << zone.toStdString() << endl;
+                }
+    }
+
+        
     // Example usage within this file (optional)
     void testUtilities() {
         QString configPath = QDir::homePath() + "/FirewallManagerConfig/config.txt";
