@@ -55,6 +55,7 @@ struct ConnectionState {
 class FirewallManager : public QObject {
     Q_OBJECT
 public:
+    explicit FirewallManager(QObject *parent = nullptr) : QObject(parent) {}
     explicit FirewallManager(QDBusConnection &bus, QObject *parent = nullptr) : QObject(parent) {
         firewallInterface = new QDBusInterface(FIREWALL_INTERFACE, FIREWALL_PATH, FIREWALL_INTERFACE, bus, this);
         if (!firewallInterface->isValid()) {
@@ -86,7 +87,43 @@ public:
         return helpInfo;
         
     }
+    void connectToVpn(const QSting &configPath){
+        // Connect to VPN using the provided configuration path
+        QString vpnCommand = "openvpn --config " + configPath;
+        QProcess *process = new QProcess(this)
+            connect(process, &QProcess::finished, this, [process](int exitCode, QProcess::ExitStatus exitStatus) {
+                if(exitStatus == QProcess::NormalExit && exitCode == 0) {
+                qDebug() << "Connected to VPN successfully.";
+            } else {
+                qDebug() << "Error: Unable to connect to VPN. Exit code:" << exitCode;
+            }
+            process->deleteLater();
+        });
 
+        process->start(vpnCommand);
+        if (!process->waitForStarted()) {
+            qDebug() << "Failed to start VPN process.";
+            delete process; // Clean up if the process failed to start
+        }
+    }
+
+    void disconnectVpn() {
+        // This can be implemented by killing the OpenVPN process
+        // You may want to keep track of the process ID or name
+        QProcess::execute("pkill openvpn");
+        qDebug() << "VPN disconnected.";
+    }
+
+    bool isVpnConnected() {
+        // Check if OpenVPN is running
+        QProcess process;
+        process.start("pgrep", QStringList() << "openvpn");
+        process.waitForFinished();
+        return process.exitCode() == 0;
+    }
+};
+
+    }
     void checkInternetConnectivity() {
         QNetworkRequest request(QUrl("http://www.google.com"));
         QNetworkReply *reply = networkManager->get(request);
@@ -409,18 +446,6 @@ void handlePacket(const QString &sourceIP, const QString &sourcePort, const QStr
     handlePacket("192.168.0.1", "12345", "192.168.0.2", "80", "ACK");
     handlePacket("192.168.0.1", "12345", "192.168.0.2", "80", "FIN");
 
-    void connectToVpn(){
-        QString vpnCommand = "openvpn --config /path/to/vpn-config.ovpn"; // Adjust to your VPN configuration file
-        QProcess process;
-        process.start(vpnCommand);
-        process.waitForFinished();
-        if (process.exitcode() == 0) {
-            cout << "Connected to VPN successfully." << endl;
-        }else{
-            cerr << "Error: Unable to connect to VPN." << process.errorString().toStdString() << endl; 
-        }
-
-    }
 
     // Function to log messages to a file
     void logMessage(const QString &message) {
@@ -841,6 +866,17 @@ int main(int argc, char *argv[]) {
     for (const QString &zone : zones) {
         cout << "- " << zone.toStdString() << endl;
     }
+
+     QString vpnConfigPath = "/path/to/your/vpn-config.ovpn";
+    firewallManager.connectToVpn(vpnConfigPath);
+
+    // Check if VPN is connected
+    if (firewallManager.isVpnConnected()) {
+        qDebug() << "VPN is currently connected.";
+    } else {
+        qDebug() << "VPN is not connected.";
+    }
+    
 
     QStringList activeZones = firewallManager.getActiveZone();
     cout << "Active Zones:" << endl;
