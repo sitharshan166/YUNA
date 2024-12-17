@@ -138,7 +138,6 @@ public:
     }
 };
 
-
 void checkInternetConnectivity() {
     QNetworkRequest request(QUrl("http://www.google.com"));
     QNetworkReply *reply = networkManager->get(request);
@@ -976,7 +975,27 @@ void removeInterface(const QString &zone, const QString &interface) {
             logMessage("Training attempt failed: Insufficient data.");
         }
     }
-    
+
+    //restore may match part of a recognized keyword
+
+    void FirewallManager::restoreDefaultConfig() {
+        if (firewallInterface) {
+            // Call the D-Bus method to restore the default firewall configuration
+            QDBusMessage reply = firewallInterface->call("restoreDefaultConfig");
+            
+            // Check if the call was successful
+            if (reply.type() == QDBusMessage::ReplyMessage) {
+                qDebug() << "Default configuration restored successfully.";
+            } else {
+                qCritical() << "Error: Unable to restore default configuration."
+                            << reply.errorMessage();
+            }
+        } else {
+            // Handle the case where the firewall interface is not initialized
+            qCritical() << "Error: Firewall interface is not initialized.";
+        }
+    }
+
     void cleanupExpiredConnections() {
         QDateTime now = QDateTime::currentDateTime();
         
@@ -1064,30 +1083,26 @@ void removeInterface(const QString &zone, const QString &interface) {
         parser.setApplicationDescription("Manage Firewall Rules using D-Bus");
         parser.addHelpOption();
         parser.addVersionOption();
-    
+        
+        QCommandLineOption restoreDefaultOption("restore-default", "Restore the default firewall configuration.");
         QCommandLineOption blockWebsiteOption("block-website", "Block a specific website <domain>");
         QCommandLineOption addPortOption("add-port", "Add a port to the firewall <port> <protocol>", "port");
         QCommandLineOption removePortOption("remove-port", "Remove a port from the firewall <port> <protocol>", "port");
     
+        parser.addOption(restoreDefaultOption);
         parser.addOption(blockWebsiteOption);
         parser.addOption(addPortOption);
         parser.addOption(removePortOption);
         parser.process(app);
     
-        // Handle VPN configuration
-        QString vpnConfigPath = "/path/to/your/vpn-config.ovpn"; // Consider passing this dynamically
-        firewallManager.connectToVpn(vpnConfigPath);
-    
-        // Check if VPN is connected
-        if (firewallManager.isVpnConnected()) {
-            qDebug() << "VPN is currently connected.";
-        } else {
-            qDebug() << "VPN is not connected.";
+        // Handle restore-default option
+        if (parser.isSet(restoreDefaultOption)) {
+            firewallManager.restoreDefaultConfig();  // Restore default firewall configuration
         }
     
         // Handle website blocking
         if (parser.isSet(blockWebsiteOption)) {
-            if (parser.positionalArguments().size() < 1) {
+            if (parser.positionalArguments().isEmpty()) {
                 cerr << "Error: Missing domain name for blocking website." << endl;
                 return 1;
             }
@@ -1120,7 +1135,7 @@ void removeInterface(const QString &zone, const QString &interface) {
         // Set up a timer for periodic training
         QTimer trainingTimer;
         QObject::connect(&trainingTimer, &QTimer::timeout, 
-                        &firewallManager, &FirewallManager::trainNeuralNetwork);
+                         &firewallManager, &FirewallManager::trainNeuralNetwork);
         trainingTimer.start(3600000);  // Train every hour
     
         // Example of rule violation
