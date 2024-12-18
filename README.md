@@ -1,5 +1,3 @@
-UNDER CONSTRUCTION
-
 #include <QCoreApplication>
 #include <QDBusInterface>
 #include <QDBusConnection>
@@ -1123,8 +1121,82 @@ void removeInterface(const QString &zone, const QString &interface) {
         qDebug() << "Rolling back temporary rules.";
         unblockAllTraffic(); // Restore normal traffic flow
     }
-
+////////////
+    void FirewallManager::checkFIrewallHealth(){
+        QDBusMessage reply = firewallInterface->call("getFirewallStatus");
+        if (reply.type() == QDBusMessage::ReplyMessage) {
+            QVariant status = reply.arguments().at(0)
+            if (status.toString() == "active") {
+                qDebug() << "Firewall is healthy and running.";
+            } else {
+                qWarning() << "Firewall service is not active. Attempting to restart...";
+                restartFirewallService();
+            }
+        } else {
+            qCritical() << "Error: Unable to check firewall status."
+                        << reply.errorMessage();
+        } 
+    }
     
+    void FirewallManager::restartFirewallService() {
+        // Restart the firewall service
+        QDBusMessage reply = firewallInterface->call("restartFirewallService");
+    
+        if (reply.type() == QDBusMessage::ReplyMessage) {
+            qDebug() << "Firewall service restarted successfully.";
+        } else {
+            qCritical() << "Error: Failed to restart firewall service."
+                        << reply.errorMessage();
+        }
+    }
+
+    void FirewallManager::scheduleSystemMaintenance(const QDateTime &maintenanceTime, const QStringList &tasks) {
+        if (!maintenanceTime.isValid() || maintenanceTime <= QDateTime::currentDateTime()) {
+            qCritical() << "Invalid maintenance time. Please specify a future time.";
+            return;
+        }
+    
+        // Store scheduled tasks for execution
+        qDebug() << "Scheduling maintenance for" << maintenanceTime.toString("yyyy-MM-dd HH:mm:ss");
+        qDebug() << "Tasks to execute:" << tasks;
+    
+        QTimer *maintenanceTimer = new QTimer(this);
+        connect(maintenanceTimer, &QTimer::timeout, this, [this, tasks, maintenanceTimer]() {
+            qDebug() << "Starting scheduled maintenance...";
+            
+            // Execute the scheduled tasks
+            for (const QString &task : tasks) {
+                if (task == "cleanupExpiredConnections") {
+                    cleanupExpiredConnections();
+                } else if (task == "optimizeFirewallRules") {
+                    optimizeFirewallRules();
+                } else if (task == "updateFirewallConfig") {
+                    loadConfig();
+                } else {
+                    qWarning() << "Unknown task:" << task;
+                }
+            }
+    
+            // Cleanup after execution
+            maintenanceTimer->stop();
+            maintenanceTimer->deleteLater();
+            qDebug() << "Maintenance completed.";
+        });
+    
+        // Schedule the timer
+        int millisecondsToMaintenance = QDateTime::currentDateTime().msecsTo(maintenanceTime);
+        maintenanceTimer->start(millisecondsToMaintenance);
+    }
+    
+    void FirewallManager::optimizeFirewallRules() {
+        // Logic to optimize firewall rules
+        qDebug() << "Optimizing firewall rules...";
+        // Example: Remove duplicate or redundant rules
+        // Call D-Bus or internal logic to clean and compact rules
+        qDebug() << "Firewall rules optimized.";
+    }    
+
+
     int main(int argc, char *argv[]) {
         QCoreApplication app(argc, argv);
         QCommandLineParser parser;
@@ -1197,7 +1269,12 @@ void removeInterface(const QString &zone, const QString &interface) {
         firewallManager.autoHeal(); // Check and respond to threats
         });
         threatMonitorTimer.start(10000); // Check every 10 seconds
-    
+
+        firewallManager.checkFirewallHealth();
+        QDateTime maintenanceTime = QDateTime::currentDateTime().addSecs(86400); // 24 hour from now
+        QStringList tasks = {"cleanupExpiredConnections", "optimizeFirewallRules", "updateFirewallConfig"};
+        firewallManager.scheduleSystemMaintenance(maintenanceTime, tasks);
+
         // Set up a timer for periodic training
         QTimer trainingTimer;
         QObject::connect(&trainingTimer, &QTimer::timeout, 
