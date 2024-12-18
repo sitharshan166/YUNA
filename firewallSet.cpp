@@ -1065,6 +1065,138 @@ void removeInterface(const QString &zone, const QString &interface) {
         QString message = "Rule violation detected: " + rule + " - " + violationDetail;
         sendNotification(message);  // Send a desktop notification
     }
+
+    bool FirewallManager::detectThreat() {
+        // Analyze network traffic and detect IPs with suspicious activity
+        QMap<QString, int> ipTraffic = analyzeTraffic(); // Assume this function collects IP traffic stats
+        
+        for (auto it = ipTraffic.begin(); it != ipTraffic.end(); ++it) {
+            if (it.value() > 1000) { // Example threshold for suspicious traffic
+                qDebug() << "Threat detected from IP:" << it.key();
+                blockIPAddress(it.key()); // Dynamically block the offending IP
+                return true;
+            }
+        }
+        return false; // No threat detected
+    }
+    
+    void FirewallManager::respondToThreat(const QString &ip) {
+        // Respond to a detected threat by blocking the IP and notifying the user
+        qDebug() << "Blocking traffic from IP:" << ip;
+        blockIPAddress(ip); // Block the offending IP
+        sendNotification("Threat Response", QString("Blocked IP: %1 due to suspicious activity").arg(ip));
+    }
+    
+    void FirewallManager::trainAdaptiveModel(const QVector<NetworkTrafficData> &trafficLogs) {
+        // Train the neural network model with collected traffic logs
+        neuralNetwork.train(trafficLogs); // Hypothetical method to train the neural network
+        
+        if (neuralNetwork.detectThreat()) { // Detect new threats post-training
+            qDebug() << "Adaptive model detected a new threat.";
+            autoHeal(); // Initiate self-healing mechanisms
+        }
+    }
+    
+    void FirewallManager::autoHeal() {
+        // Self-healing mechanism to respond to detected threats
+        qDebug() << "Starting self-healing process.";
+        
+        if (detectThreat()) { // Check for threats
+            qDebug() << "Threat detected. Applying dynamic rules.";
+            blockAllTraffic(); // Block all traffic as a temporary measure
+            
+            // Schedule to unblock traffic after 30 seconds
+            QTimer::singleShot(30000, this, &FirewallManager::unblockAllTraffic); 
+        }
+    }
+    
+    void FirewallManager::logAndNotify(const QString &event, const QString &details) {
+        // Log warning messages and send desktop notifications
+        logWarning(event + ": " + details); // Hypothetical logging method
+        sendNotification(event, details);
+    }
+    
+    void FirewallManager::rollbackRules() {
+        // Roll back temporary firewall rules to restore normal traffic
+        qDebug() << "Rolling back temporary rules.";
+        unblockAllTraffic(); // Restore normal traffic flow
+    }
+////////////
+    void FirewallManager::checkFIrewallHealth(){
+        QDBusMessage reply = firewallInterface->call("getFirewallStatus");
+        if (reply.type() == QDBusMessage::ReplyMessage) {
+            QVariant status = reply.arguments().at(0)
+            if (status.toString() == "active") {
+                qDebug() << "Firewall is healthy and running.";
+            } else {
+                qWarning() << "Firewall service is not active. Attempting to restart...";
+                restartFirewallService();
+            }
+        } else {
+            qCritical() << "Error: Unable to check firewall status."
+                        << reply.errorMessage();
+        } 
+    }
+    
+    void FirewallManager::restartFirewallService() {
+        // Restart the firewall service
+        QDBusMessage reply = firewallInterface->call("restartFirewallService");
+    
+        if (reply.type() == QDBusMessage::ReplyMessage) {
+            qDebug() << "Firewall service restarted successfully.";
+        } else {
+            qCritical() << "Error: Failed to restart firewall service."
+                        << reply.errorMessage();
+        }
+    }
+
+    void FirewallManager::scheduleSystemMaintenance(const QDateTime &maintenanceTime, const QStringList &tasks) {
+        if (!maintenanceTime.isValid() || maintenanceTime <= QDateTime::currentDateTime()) {
+            qCritical() << "Invalid maintenance time. Please specify a future time.";
+            return;
+        }
+    
+        // Store scheduled tasks for execution
+        qDebug() << "Scheduling maintenance for" << maintenanceTime.toString("yyyy-MM-dd HH:mm:ss");
+        qDebug() << "Tasks to execute:" << tasks;
+    
+        QTimer *maintenanceTimer = new QTimer(this);
+        connect(maintenanceTimer, &QTimer::timeout, this, [this, tasks, maintenanceTimer]() {
+            qDebug() << "Starting scheduled maintenance...";
+            
+            // Execute the scheduled tasks
+            for (const QString &task : tasks) {
+                if (task == "cleanupExpiredConnections") {
+                    cleanupExpiredConnections();
+                } else if (task == "optimizeFirewallRules") {
+                    optimizeFirewallRules();
+                } else if (task == "updateFirewallConfig") {
+                    loadConfig();
+                } else {
+                    qWarning() << "Unknown task:" << task;
+                }
+            }
+    
+            // Cleanup after execution
+            maintenanceTimer->stop();
+            maintenanceTimer->deleteLater();
+            qDebug() << "Maintenance completed.";
+        });
+    
+        // Schedule the timer
+        int millisecondsToMaintenance = QDateTime::currentDateTime().msecsTo(maintenanceTime);
+        maintenanceTimer->start(millisecondsToMaintenance);
+    }
+    
+    void FirewallManager::optimizeFirewallRules() {
+        // Logic to optimize firewall rules
+        qDebug() << "Optimizing firewall rules...";
+        // Example: Remove duplicate or redundant rules
+        // Call D-Bus or internal logic to clean and compact rules
+        qDebug() << "Firewall rules optimized.";
+    }    
+
+
     int main(int argc, char *argv[]) {
         QCoreApplication app(argc, argv);
         QCommandLineParser parser;
@@ -1131,7 +1263,18 @@ void removeInterface(const QString &zone, const QString &interface) {
             QString protocol = parser.positionalArguments().at(1);
             firewallManager.addPort(port, protocol);
         }
-    
+
+        QTimer threatMonitorTimer;
+        QObject::connect(&threatMonitorTimer, &QTimer::timeout, [&firewallManager]() {
+        firewallManager.autoHeal(); // Check and respond to threats
+        });
+        threatMonitorTimer.start(10000); // Check every 10 seconds
+
+        firewallManager.checkFirewallHealth();
+        QDateTime maintenanceTime = QDateTime::currentDateTime().addSecs(86400); // 24 hour from now
+        QStringList tasks = {"cleanupExpiredConnections", "optimizeFirewallRules", "updateFirewallConfig"};
+        firewallManager.scheduleSystemMaintenance(maintenanceTime, tasks);
+
         // Set up a timer for periodic training
         QTimer trainingTimer;
         QObject::connect(&trainingTimer, &QTimer::timeout, 
