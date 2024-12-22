@@ -1,3 +1,46 @@
+UNDER CONSTRUCTION 
+WILL BE RELEASED BEFORE GTA 6
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 #include <QCoreApplication>
 #include <QDBusInterface>
 #include <QDBusConnection>
@@ -65,28 +108,38 @@ public:
     }
 
     QString getHelpInformation() {
-
         QString helpInfo;
         helpInfo += "=== Firewall Manager Help ===\n";
         helpInfo += "1. **Check Internet Connectivity**: Call `checkInternetConnectivity()` to verify if the internet is accessible.\n";
-        helpInfo += "2. **Add Firewall Rule**: Use `addFirewallRule(sourceIP, destIP, port)` to add a new rule.\n";
+        helpInfo += "2. **Add Firewall Rule**: Use `addFirewallRule(sourceIP, destIP, port)` to add a new rule to control traffic.\n";
         helpInfo += "3. **Remove Firewall Rule**: Use `removeFirewallRule(ruleID)` to remove an existing rule.\n";
-        helpInfo += "4. **Block IP Address**: Call `blockIPAddress(ipAddress)` to block a specific IP.\n";
-        helpInfo += "5. **Unblock IP Address**: Call `unblockIPAddress(ipAddress)` to unblock a specific IP.\n";
-        helpInfo += "6. **Enable/Disable Firewall**: Use `enableFirewall()` or `disableFirewall()` to toggle the firewall status.\n";
-        helpInfo += "7. **List Firewall Rules**: Call `listFirewallRules()` to display all current rules.\n";
+        helpInfo += "4. **Block IP Address**: Call `blockIPAddress(ipAddress)` to block incoming or outgoing traffic from a specific IP.\n";
+        helpInfo += "5. **Unblock IP Address**: Call `unblockIPAddress(ipAddress)` to unblock a previously blocked IP.\n";
+        helpInfo += "6. **Enable/Disable Firewall**: Use `enableFirewall()` to enable the firewall or `disableFirewall()` to turn it off.\n";
+        helpInfo += "7. **List Firewall Rules**: Call `listFirewallRules()` to display all current firewall rules.\n";
         helpInfo += "8. **Get Traffic Statistics**: Use `getTrafficStats()` to retrieve statistics about network traffic.\n";
-        helpInfo += "9. **Schedule Firewall Changes**: Use `scheduleFirewallChange(scheduledTime, action)` to schedule enabling/disabling the firewall.\n";
+        helpInfo += "9. **Schedule Firewall Changes**: Use `scheduleFirewallChange(scheduledTime, action)` to schedule enabling or disabling the firewall.\n";
         helpInfo += "10. **Get Automatic Helpers**: Call `getAutomaticHelpers()` to retrieve common commands and usage examples.\n";
-        helpInfo += "11. **Train Neural Network**: Call `trainNeuralNetwork()` to train the neural network with collected data.\n";
-        helpInfo += "12. **Toggle Panic Mode**: Use `togglePanicMode()` to quickly block or unblock all traffic.\n";
-        helpInfo += "13. **Get GeoIP Information**: Call `getGeoIP(ip)` to retrieve geographical information for a given IP.\n";
-        helpInfo += "14. **Log Messages**: Use `logMessage(message)` to log important events or messages.\n";
-        helpInfo += "15. **Exit**: Type `exit` to close the application.\n";
-
+        helpInfo += "11. **Train Neural Network**: Call `trainNeuralNetwork()` to train a neural network to detect traffic anomalies and optimize rules.\n";
+        helpInfo += "12. **Toggle Panic Mode**: Use `togglePanicMode()` to quickly block all traffic in case of an emergency.\n";
+        helpInfo += "13. **Get GeoIP Information**: Call `getGeoIP(ip)` to retrieve geographical information for a specific IP.\n";
+        helpInfo += "14. **Log Messages**: Use `logMessage(message)` to log important events or messages for future analysis.\n";
+        helpInfo += "15. **Install QT**: Call `installingQT()` to install the necessary QT dependencies for this application.\n";
+        helpInfo += "16. **Add Network Interface**: Use `addInterface(interfaceName)` to add a new network interface to the firewall.\n";
+        helpInfo += "17. **Remove Network Interface**: Call `removeInterface(interfaceName)` to remove an interface.\n";
+        helpInfo += "18. **Change Zone of Interface**: Use `changeZoneOfInterface(interfaceName, zone)` to change the security zone of an interface.\n";
+        helpInfo += "19. **Block Websites**: Call `blockWebsite(domain)` to block access to a specific website.\n";
+        helpInfo += "20. **Analyze Traffic for Anomalies**: Use `analysisTrafficForAnomalies()` to detect irregularities in the network traffic.\n";
+        helpInfo += "21. **Detect Packet Size Anomaly**: Call `detectPacketSizeAnomaly()` to find packets that deviate from normal size patterns.\n";
+        helpInfo += "22. **Restore Default Config**: Use `restoreDefaultConfig()` to reset the firewall configuration to its default settings.\n";
+        helpInfo += "23. **Optimize Firewall Rules**: Call `optimizeFirewallRules()` to automatically adjust and improve firewall rules.\n";
+        helpInfo += "24. **Schedule System Maintenance**: Use `scheduleSystemMaintenance(time, task)` to schedule maintenance tasks such as rule updates.\n";
+        helpInfo += "25. **Send Notifications**: Call `sendNotification(message)` to send notifications about critical events or system status.\n";
+        helpInfo += "26. **Exit**: Type `exit` to close the application.\n";
+    
         return helpInfo;
-        
     }
+    
     void connectToVpn(const QString &configPath) {
         // Ensure the configPath is not empty or invalid
         if (configPath.isEmpty()) {
