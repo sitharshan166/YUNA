@@ -1,11 +1,3 @@
-
-
-
-
-
-
-
-
 #include <QCoreApplication>
 #include <QDBusInterface>
 #include <QDBusConnection>
