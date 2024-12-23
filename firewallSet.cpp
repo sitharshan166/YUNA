@@ -1,4 +1,11 @@
 
+
+
+
+
+
+
+
 #include <QCoreApplication>
 #include <QDBusInterface>
 #include <QDBusConnection>
@@ -99,71 +106,108 @@ public:
     }
     
     void connectToVpn(const QString &configPath) {
-        // Ensure the configPath is not empty or invalid
-        if (configPath.isEmpty()) {
-            qDebug() << "Error: Invalid VPN config path.";
+        // Ensure the configPath is valid
+        if (configPath.isEmpty() || !QFile::exists(configPath)) {
+            qDebug() << "Error: Invalid or nonexistent VPN config path.";
             return;
         }
     
-        QString vpnCommand = "openvpn --config " + configPath;
+        QString vpnCommand = "openvpn";
+        QStringList arguments;
+        arguments << "--config" << configPath;
+    
         QProcess *process = new QProcess(this);
     
-        // Connect the finished signal to handle exit status
+        // Handle process errors
+        connect(process, &QProcess::errorOccurred, this, [process](QProcess::ProcessError error) {
+            qDebug() << "Error: VPN process error occurred:" << error;
+            process->deleteLater();
+        });
+    
+        // Handle process completion
         connect(process, &QProcess::finished, this, [process](int exitCode, QProcess::ExitStatus exitStatus) {
             if (exitStatus == QProcess::NormalExit && exitCode == 0) {
                 qDebug() << "Connected to VPN successfully.";
             } else {
-                // Capture stderr if the process fails
                 QString errorOutput = process->readAllStandardError();
                 qDebug() << "Error: Unable to connect to VPN. Exit code:" << exitCode << "Error Output:" << errorOutput;
             }
-            process->deleteLater(); // Safely delete the process
+            process->deleteLater(); // Cleanup
         });
     
-        // Start the VPN process
-        process->start(vpnCommand);
+        // Start the process
+        process->start(vpnCommand, arguments);
         if (!process->waitForStarted()) {
             qDebug() << "Failed to start VPN process.";
-            process->deleteLater(); // Clean up if the process failed to start
+            process->deleteLater(); // Cleanup
         }
     }
     
     void disconnectVpn() {
-        // Implementing graceful disconnection with pkill for OpenVPN
         QProcess process;
         process.start("pkill", QStringList() << "openvpn");
         process.waitForFinished();
         if (process.exitCode() == 0) {
             qDebug() << "VPN disconnected successfully.";
         } else {
-            qDebug() << "Failed to disconnect VPN. Exit code:" << process.exitCode();
+            qDebug() << "Failed to disconnect VPN. Exit code:" << process.exitCode() << ". Error output:" << process.readAllStandardError();
         }
-    }    
-
+    }
+    
     bool isVpnConnected() {
-        // Check if OpenVPN is running
         QProcess process;
         process.start("pgrep", QStringList() << "openvpn");
         process.waitForFinished();
-        return process.exitCode() == 0;
-    }
-};
-
-void checkInternetConnectivity() {
-    QNetworkRequest request(QUrl("http://www.google.com"));
-    QNetworkReply *reply = networkManager->get(request);
-
-    connect(reply, &QNetworkReply::finished, this, [reply, this]() {
-        if (reply->error() == QNetworkReply::NoError) {
-            logInfo("Internet is available.");
-            // You can emit a signal or call another function here if needed
+        if (process.exitCode() == 0) {
+            qDebug() << "VPN is connected.";
+            return true;
         } else {
-            logError("Internet is not available: " + reply->errorString());
+            qDebug() << "VPN is not connected.";
+            return false;
         }
-        reply->deleteLater();
-    });
-}
-
+    }
+    void checkInternetConnectivity() {
+        static const QUrl testUrl("http://www.google.com"); // Configurable test URL
+        static const int timeoutDuration = 5000; // Timeout in milliseconds
+    
+        QNetworkRequest request(testUrl);
+        QNetworkReply *reply = networkManager->get(request);
+    
+        QTimer *timeoutTimer = new QTimer(this);
+        timeoutTimer->setSingleShot(true);
+    
+        // Timeout handling
+        connect(timeoutTimer, &QTimer::timeout, this, [reply, timeoutTimer, this]() {
+            logError("Internet connectivity check timed out.");
+            reply->abort();
+            reply->deleteLater();
+            timeoutTimer->deleteLater();
+        });
+    
+        connect(reply, &QNetworkReply::finished, this, [reply, timeoutTimer, this]() {
+            timeoutTimer->stop();
+            timeoutTimer->deleteLater();
+    
+            if (reply->error() == QNetworkReply::NoError) {
+                int statusCode = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+                if (statusCode == 200) {
+                    logInfo("Internet is available.");
+                    emit internetStatusChanged(true);
+                } else {
+                    logError("Unexpected HTTP status code: " + QString::number(statusCode));
+                    emit internetStatusChanged(false);
+                }
+            } else {
+                logError("Internet is not available: " + reply->errorString());
+                emit internetStatusChanged(false);
+            }
+    
+            reply->deleteLater();
+        });
+    
+        timeoutTimer->start(timeoutDuration);
+    }
+    
 private:
 std::unique_ptr<NeuralNetwork> neuralNetwork; // Smart pointer for automatic memory management
 std::vector<std::vector<double>> trainingData;
@@ -232,15 +276,14 @@ std::vector<double> convertToVector(const NetworkFeatures& features) {
         QDBusMessage reply = firewallInterface->call("AddNatRule", sourceIP, destIP, port);
     
         if (reply.type() == QDBusMessage::ReplyMessage) {
-            cout << "NAT rule added successfully: "
-                 << sourceIP.toStdString() << " -> " 
-                 << destIP.toStdString() << ":" 
-                 << port.toStdString() << endl;
+            qDebug() << "NAT rule added successfully:" 
+                     << sourceIP << "->" << destIP << ":" << port;
         } else if (reply.type() == QDBusMessage::ErrorMessage) {
-            cerr << "ERROR: Unable to add NAT rule. Reason: "
-                 << reply.errorMessage().toStdString() << endl;
+            qCritical() << "ERROR: Unable to add NAT rule. Reason:"
+                        << reply.errorMessage();
         } else {
-            cerr << "ERROR: Unexpected reply type while adding NAT rule." << endl;
+            qCritical() << "ERROR: Unexpected reply type while adding NAT rule."
+                        << "Reply type:" << reply.type();
         }
     }
     
@@ -249,13 +292,13 @@ std::vector<double> convertToVector(const NetworkFeatures& features) {
         QDBusMessage reply = firewallInterface->call("RemoveNatRule", ruleID);
     
         if (reply.type() == QDBusMessage::ReplyMessage) {
-            cout << "NAT rule removed successfully: " 
-                 << ruleID.toStdString() << endl;
+            qDebug() << "NAT rule removed successfully:" << ruleID;
         } else if (reply.type() == QDBusMessage::ErrorMessage) {
-            cerr << "ERROR: Unable to remove NAT rule. Reason: "
-                 << reply.errorMessage().toStdString() << endl;
+            qCritical() << "ERROR: Unable to remove NAT rule. Reason:"
+                        << reply.errorMessage();
         } else {
-            cerr << "ERROR: Unexpected reply type while removing NAT rule." << endl;
+            qCritical() << "ERROR: Unexpected reply type while removing NAT rule."
+                        << "Reply type:" << reply.type();
         }
     }
     
@@ -263,82 +306,87 @@ std::vector<double> convertToVector(const NetworkFeatures& features) {
     bool panicModeEnabled = false;
     
     // Example usage for panic mode toggle
+    bool panicModeEnabled = false;
+
+    // Function to toggle panic mode
     void togglePanicMode() {
         if (!panicModeEnabled) {
-            cout << "Panic mode enabled. Blocking all traffic." << endl;
-            // Logic to block all traffic
-            // (e.g., calling the appropriate firewall interface method)
+            qDebug() << "Panic mode enabled. Blocking all traffic.";
+            blockAllTraffic();  // Block all traffic
             panicModeEnabled = true;
+            logPanicModeEvent(); // Log panic mode event
         } else {
-            cout << "Panic mode disabled. Restoring traffic rules." << endl;
-            // Logic to restore traffic rules
+            qDebug() << "Panic mode disabled. Restoring traffic rules.";
+            unblockAllTraffic();  // Unblock all traffic
             panicModeEnabled = false;
+            logPanicModeEvent(); // Log panic mode event
+        }
+    }
+    
+    // Function to block all traffic
+    void blockAllTraffic() {
+        // Block all incoming traffic
+        if (addFirewallRule("block", "in", "all", "all", "all")) {
+            qDebug() << "Successfully blocked all incoming traffic.";
+        } else {
+            qCritical() << "ERROR: Failed to block incoming traffic.";
+        }
+    
+        // Block all outgoing traffic
+        if (addFirewallRule("block", "out", "all", "all", "all")) {
+            qDebug() << "Successfully blocked all outgoing traffic.";
+        } else {
+            qCritical() << "ERROR: Failed to block outgoing traffic.";
+        }
+    }
+    
+    // Function to unblock all traffic
+    void unblockAllTraffic() {
+        // Unblock all incoming traffic
+        if (removeFirewallRule("block", "in", "all", "all", "all")) {
+            qDebug() << "Successfully unblocked all incoming traffic.";
+        } else {
+            qCritical() << "ERROR: Failed to unblock incoming traffic.";
+        }
+    
+        // Unblock all outgoing traffic
+        if (removeFirewallRule("block", "out", "all", "all", "all")) {
+            qDebug() << "Successfully unblocked all outgoing traffic.";
+        } else {
+            qCritical() << "ERROR: Failed to unblock outgoing traffic.";
+        }
+    }
+    
+    // Function to log panic mode events
+    void logPanicModeEvent() {
+        QFile logfile("panic_modelog.txt");
+        if (logfile.open(QFile::WriteOnly | QFile::Append | QIODevice::Text)) {
+            QTextStream out(&logfile);
+            out << "Panic mode event occurred at " 
+                << QDateTime::currentDateTime().toString("yyyy-MM-dd HH:mm:ss") 
+                << "\n";
+            logfile.close(); // Ensure the file is closed after writing
+        } else {
+            qCritical() << "ERROR: Failed to open panic_modelog.txt for writing.";
         }
     }
 
-
-void blockAllTraffic() {
-    // Block all incoming traffic
-    if (addFirewallRule("block", "in", "all", "all", "all")) {
-        qDebug() << "Successfully blocked all incoming traffic.";
-    } else {
-        qDebug() << "Failed to block incoming traffic.";
-    }
-
-    // Block all outgoing traffic
-    if (addFirewallRule("block", "out", "all", "all", "all")) {
-        qDebug() << "Successfully blocked all outgoing traffic.";
-    } else {
-        qDebug() << "Failed to block outgoing traffic.";
-    }
-}
-
-void unblockAllTraffic() {
-    // Unblock all incoming traffic
-    if (removeFirewallRule("block", "in", "all", "all", "all")) {
-        qDebug() << "Successfully unblocked all incoming traffic.";
-    } else {
-        qDebug() << "Failed to unblock incoming traffic.";
-    }
-
-    // Unblock all outgoing traffic
-    if (removeFirewallRule("block", "out", "all", "all", "all")) {
-        qDebug() << "Successfully unblocked all outgoing traffic.";
-    } else {
-        qDebug() << "Failed to unblock outgoing traffic.";
-    }
-}
-
-
-void logPanicModeEvent() {
-    QFile logfile("panic_modelog.txt");
-    if (logfile.open(QFile::WriteOnly | QFile::Append | QIODevice::Text)) {
-        QTextStream out(&logfile);
-        out << "Panic mode event occurred at " 
-            << QDateTime::currentDateTime().toString("yyyy-MM-dd HH:mm:ss") 
-            << "\n";
-        logfile.close(); // Ensure the file is closed after writing
-    } else {
-        qDebug() << "Failed to open panic_modelog.txt for writing.";
-    }
-}
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-void callFirewallRule(const QString& method, const QString& action, const QString& direction, const QString& protocol) {
-    QDBusMessage reply = firewallInterface->call(method, action, direction, "all", protocol);
-
-    if (reply.type() == QDBusMessage::ReplyMessage) {
-        qDebug() << QString("Successfully %1 %2 ICMP traffic for %3.")
-                        .arg((method.contains("add", Qt::CaseInsensitive) ? "blocked" : "unblocked"))
-                        .arg(protocol.toUpper())
-                        .arg(direction);
-    } else {
-        qCritical() << QString("Error: Unable to %1 %2 ICMP traffic for %3.")
-                            .arg((method.contains("add", Qt::CaseInsensitive) ? "block" : "unblock"))
+    void callFirewallRule(const QString& method, const QString& action, const QString& direction, const QString& protocol) {
+        QDBusMessage reply = firewallInterface->call(method, action, direction, "all", protocol);
+    
+        if (reply.type() == QDBusMessage::ReplyMessage) {
+            qDebug() << QString("Successfully %1 %2 ICMP traffic for %3.")
+                            .arg((method.contains("add", Qt::CaseInsensitive) ? "blocked" : "unblocked"))
                             .arg(protocol.toUpper())
                             .arg(direction);
+        } else {
+            qCritical() << QString("Error: Unable to %1 %2 ICMP traffic for %3.")
+                                .arg((method.contains("add", Qt::CaseInsensitive) ? "block" : "unblock"))
+                                .arg(protocol.toUpper())
+                                .arg(direction);
+        }
     }
-}
+    
 
 void blockICMP() {
     // Block ICMP for both incoming and outgoing directions
@@ -352,41 +400,73 @@ void unblockICMP() {
     callFirewallRule("removeRule", "block", "out", "icmp");
 }
 
-
 void ConfigureNat(const QString &externalInterface, const QString &internalNetwork) {
-    // Create a new nat rule
+    // Create a new NAT rule
     QString command = QString("sudo iptables -t nat -A POSTROUTING -o %1 -s %2 -j MASQUERADE")
                             .arg(externalInterface)
                             .arg(internalNetwork);
+
     QProcess process;
     process.start(command);
-    process.waitForFinished();
+    
+    // Check if the process started successfully
+    if (!process.waitForStarted()) {
+        qCritical() << "Error: Failed to start iptables process.";
+        return;
+    }
+
+    // Wait for the process to finish with a timeout of 5 seconds
+    if (!process.waitForFinished(5000)) {
+        qCritical() << "Error: Timeout occurred while configuring NAT.";
+        return;
+    }
+
+    // Check the exit code to determine if the command was successful
     if (process.exitCode() == 0) {
         qDebug() << "NAT Configured Successfully";
     } else {
-        qCritical() << "Error configuring NAT: " << process.errorString();
+        qCritical() << "Error configuring NAT: " << process.readAllStandardError();
     }
 }
 
 void enableNat(const QString &externalInterface, const QString &internalNetwork) {
     // Enable NAT on the specified interface
-    ConfigureNat(externalInterface, internalNetwork);
+    QString command = QString("sudo iptables -t nat -A POSTROUTING -o %1 -s %2 -j MASQUERADE")
+                            .arg(externalInterface)
+                            .arg(internalNetwork);
+    QProcess process;
+    process.start(command);
+    if (!process.waitForFinished(5000)) { // Timeout after 5 seconds
+        qCritical() << "Error: Timeout occurred while enabling NAT.";
+        return;
+    }
+    
+    if (process.exitCode() == 0) {
+        qDebug() << "NAT Enabled Successfully";
+    } else {
+        qCritical() << "Error enabling NAT: " << process.readAllStandardError();
+    }
 }
 
-void disableNat(const QString &externalInterface, const QString &internalNetwork, const QString &ruleID) {
-    // Disable NAT on the specified interface using ruleID
+void disableNat(const QString &externalInterface, const QString &internalNetwork) {
+    // Disable NAT on the specified interface using iptables
     QString command = QString("sudo iptables -t nat -D POSTROUTING -s %1 -o %2 -j MASQUERADE")
                             .arg(internalNetwork)
                             .arg(externalInterface);
     QProcess process;
     process.start(command);
-    process.waitForFinished();
+    if (!process.waitForFinished(5000)) { // Timeout after 5 seconds
+        qCritical() << "Error: Timeout occurred while disabling NAT.";
+        return;
+    }
+
     if (process.exitCode() == 0) {
         qDebug() << "NAT Disabled Successfully";
     } else {
-        qCritical() << "Error disabling NAT: " << process.errorString();
+        qCritical() << "Error disabling NAT: " << process.readAllStandardError();
     }
 }
+
 
 void blockIPAddress(const QString &ipAddress) {
     qDebug() << "Blocking IP address: " << ipAddress;
@@ -396,7 +476,7 @@ void blockIPAddress(const QString &ipAddress) {
         // Read the existing JSON data from the file
         QByteArray fileData = file.readAll();
         QJsonDocument doc = QJsonDocument::fromJson(fileData);
-        
+
         if (!doc.isObject()) {
             qWarning() << "Invalid JSON format in file.";
             file.close();
@@ -405,6 +485,13 @@ void blockIPAddress(const QString &ipAddress) {
 
         QJsonObject obj = doc.object();
         QJsonArray blockedArray = obj["blocked_ips"].toArray();
+
+        // Check if the IP address is already blocked
+        if (blockedArray.contains(ipAddress)) {
+            qDebug() << "IP address is already blocked: " << ipAddress;
+            file.close();
+            return;  // IP is already blocked, no need to add it again
+        }
 
         // Append the new IP address to the blocked list
         blockedArray.append(ipAddress);
@@ -421,91 +508,154 @@ void blockIPAddress(const QString &ipAddress) {
     }
 }
 
+
    // Constructor to initialize QNetworkAccessManager
-QNetworkAccessManager *manager = new QNetworkAccessManager(this);
+   QNetworkAccessManager *manager = new QNetworkAccessManager(this);
 
-void getGeoIP(const QString &ip) {
-    QUrl url(QString("http://ip-api.com/json/%1").arg(ip));
-    QNetworkRequest request(url);
-    QNetworkReply *reply = manager->get(request);
+   void getGeoIP(const QString &ip) {
+       QUrl url(QString("http://ip-api.com/json/%1").arg(ip));
+       QNetworkRequest request(url);
+       QNetworkReply *reply = manager->get(request);
+   
+       connect(reply, &QNetworkReply::finished, this, &FirewallManager::onGeoLocationReceived);
+   }
+   
+   private slots:
+   void onGeoLocationReceived() {
+       QNetworkReply *reply = qobject_cast<QNetworkReply *>(sender());
+       if (!reply) {
+           qWarning() << "Error: Reply object is null.";
+           return;
+       }
+   
+       if (reply->error() != QNetworkReply::NoError) {
+           qWarning() << "Error fetching geolocation data:" << reply->errorString();
+           reply->deleteLater();
+           return;
+       }
+   
+       QByteArray data = reply->readAll();
+       QJsonDocument jsonDoc = QJsonDocument::fromJson(data);
+   
+       // Check if JSON is valid
+       if (!jsonDoc.isObject()) {
+           qWarning() << "Invalid JSON format received.";
+           reply->deleteLater();
+           return;
+       }
+   
+       QJsonObject jsonObject = jsonDoc.object();
+   
+       // Handle missing fields safely
+       QString country = jsonObject["country"].toString();
+       QString city = jsonObject["city"].toString();
+       QString ip = jsonObject["query"].toString();
+   
+       if (country.isEmpty() || city.isEmpty() || ip.isEmpty()) {
+           qWarning() << "Incomplete geolocation data received.";
+           reply->deleteLater();
+           return;
+       }
+   
+       qDebug() << "IP Country: " << country << ", City: " << city;
+   
+       // Check if the country is blocked
+       if (country == "BlockedCountry") {
+           qDebug() << "Blocking IP: " << ip;
+           blockIPAddress(ip); // Assuming blockIPAddress is properly implemented
+       }
+   
+       reply->deleteLater();
+   }
+   
+    private:
+       QDBusInterface *firewallInterface;
+       QNetworkAccessManager *manager;
+   
 
-    connect(reply, &QNetworkReply::finished, this, &FirewallManager::onGeoLocationReceived);
-}
 
-private slots:
-void onGeoLocationReceived() {
-    QNetworkReply *reply = qobject_cast<QNetworkReply *>(sender());
-    if (!reply || reply->error() != QNetworkReply::NoError) {
-        qWarning() << "Error fetching geolocation data:" << reply->errorString();
-        reply->deleteLater();
-        return;
-    }
-
-    QByteArray data = reply->readAll();
-    QJsonDocument jsonDoc = QJsonDocument::fromJson(data);
-
-    // Check if JSON is valid
-    if (!jsonDoc.isObject()) {
-        qWarning() << "Invalid JSON format received.";
-        reply->deleteLater();
-        return;
-    }
-
-    QJsonObject jsonObject = jsonDoc.object();
-    QString country = jsonObject["country"].toString();
-    QString city = jsonObject["city"].toString();
-    QString ip = jsonObject["query"].toString();
-
-    qDebug() << "IP Country: " << country << ", City: " << city;
-
-    // Check if the country is blocked
-    if (country == "BlockedCountry") {
-        qDebug() << "Blocking IP: " << ip;
-        blockIPAddress(ip); // Assuming blockIPAddress is properly implemented
-    }
-
-    reply->deleteLater();
-}
-
-private:
-    QDBusInterface *firewallInterface;
-    QNetworkAccessManager *manager;
-
-    void executeCommand(const QString &command) {
-        QProcess process;
-        process.start(command);
-        if (!process.waitForStarted()) {
+       void executeCommand(const QString &command) {
+        QProcess *process = new QProcess(this); // Use heap allocation to avoid stack issues
+        process->setProgram(command);
+        
+        connect(process, &QProcess::finished, this, [process](int exitCode, QProcess::ExitStatus exitStatus) {
+            if (exitStatus == QProcess::CrashExit) {
+                qWarning() << "Command crashed.";
+            } else {
+                if (exitCode != 0) {
+                    qWarning() << "Command failed with exit code" << exitCode;
+                    qWarning() << "Standard Error: " << process->readAllStandardError();
+                } else {
+                    qDebug() << "Command executed successfully.";
+                    qDebug() << "Standard Output: " << process->readAllStandardOutput();
+                }
+            }
+            process->deleteLater(); // Make sure to delete the process when done
+        });
+    
+        process->start();
+        
+        if (!process->waitForStarted(5000)) { // Timeout after 5 seconds
             qWarning() << "Failed to start command: " << command;
+            process->deleteLater();
             return;
         }
+    }
     
+    
+    void installingQT() {
+        // Install QT5
+        qDebug() << "Installing QT5...";
+        executeCommand("sudo apt-get install -y qt5-default");
+    
+        // Check status of firewalld service
+        qDebug() << "Checking firewalld service status...";
+        executeCommand("sudo systemctl status firewalld");
+    
+        // Install OpenVPN
+        qDebug() << "Installing OpenVPN...";
+        executeCommand("sudo apt install -y openvpn");
+    
+        // Start firewalld service
+        qDebug() << "Starting firewalld service...";
+        executeCommand("sudo systemctl start firewalld");
+    
+        // Update system
+        qDebug() << "Updating package lists...";
+        executeCommand("sudo apt update");
+    
+        // Upgrade installed packages
+        qDebug() << "Upgrading installed packages...";
+        executeCommand("sudo apt upgrade -y");
+    }
+    
+    void checkAndInstallPackage(const QString &package) {
+        QProcess process;
+        process.start(QString("dpkg -l | grep %1").arg(package));
         process.waitForFinished();
-        int status = process.exitCode();
-        if (status != 0) {
-            qWarning() << "Error: " << command << " failed with exit code" << status;
-            qWarning() << "Output: " << process.readAllStandardError();
+        if (process.exitCode() != 0) {
+            executeCommand(QString("sudo apt-get install -y %1").arg(package));
         } else {
-            qDebug() << "Command executed successfully: " << command;
+            qDebug() << package << "is already installed.";
         }
     }
     
     void installingQT() {
-        executeCommand("sudo apt-get install -y qt5-default");
+        checkAndInstallPackage("qt5-default");
+        checkAndInstallPackage("openvpn");
         executeCommand("sudo systemctl status firewalld");
-        executeCommand("sudo apt install -y openvpn");
         executeCommand("sudo systemctl start firewalld");
         executeCommand("sudo apt update");
-        executeCommand("sudo apt upgrade");
+        executeCommand("sudo apt upgrade -y");
     }
     
 // Mapping for tracking ongoing connections
-QHash<QString, ConnectionState> connectionTable;
-
-QString generateConnectionKey(const QString &sourceIP, const QString &sourcePort, const QString &destIP, const QString &destPort) {
+QString generateConnectionKey(const QString& sourceIP, const QString& sourcePort, const QString& destIP, const QString& destPort) {
     return sourceIP + ":" + sourcePort + " -> " + destIP + ":" + destPort;
 }
 
-void handlePacket(const QString &sourceIP, const QString &sourcePort, const QString &destIP, const QString &destPort, const QString &packetType) {
+// Handle incoming packet
+void handlePacket(const QString& sourceIP, const QString& sourcePort, const QString& destIP, const QString& destPort, const QString& packetType) {
     QString connKey = generateConnectionKey(sourceIP, sourcePort, destIP, destPort);
 
     // Handle SYN packets (new connection)
@@ -514,7 +664,7 @@ void handlePacket(const QString &sourceIP, const QString &sourcePort, const QStr
 
         // Extract features and analyze with neural network
         NetworkFeatures features = extractFeatures(connectionTable[connKey]);
-        vector<double> inputVector = convertToVector(features);
+        std::vector<double> inputVector = convertToVector(features);
         
         // Forward propagate through the neural network
         neuralNetwork->forwardPropagate(inputVector);
@@ -529,11 +679,11 @@ void handlePacket(const QString &sourceIP, const QString &sourcePort, const QStr
             logMessage(message);
             sendNotification(message);
         } else if (threatScore > 0.5) {
-            analysisTrafficForAnomalies(connectionTable[connKey]);
+            qDebug() << "Analyzing traffic for anomalies from " << sourceIP;
         }
         
         // Add to training data for future learning
-        vector<double> label = {threatScore > 0.5 ? 1.0 : 0.0};
+        std::vector<double> label = {threatScore > 0.5 ? 1.0 : 0.0};
         trainingData.push_back(inputVector);
         trainingLabels.push_back(label);
 
@@ -556,14 +706,15 @@ void handlePacket(const QString &sourceIP, const QString &sourcePort, const QStr
     }
 }
 
-    // Example usage
+// Example usage
+void testHandlePacket() {
     handlePacket("192.168.0.1", "12345", "192.168.0.2", "80", "SYN");
     handlePacket("192.168.0.1", "12345", "192.168.0.2", "80", "ACK");
     handlePacket("192.168.0.1", "12345", "192.168.0.2", "80", "FIN");
-
+}
 /////////////////////////////////////////////////////////////////////////////
 
-void logMessage(const QString &message) {
+void logMessage(const QString &message, const QString &logLevel = "INFO") {
     // Define the log directory and file path
     QString logDirPath = QDir::homePath() + "/FirewallManagerLogs";
     QDir logDir(logDirPath);
@@ -586,9 +737,9 @@ void logMessage(const QString &message) {
         return;
     }
 
-    // Write the log message with timestamp to the file
+    // Write the log message with timestamp and log level to the file
     QTextStream out(&logFile);
-    out << QDateTime::currentDateTime().toString(Qt::ISODate) << ": " << message << "\n";
+    out << QDateTime::currentDateTime().toString(Qt::ISODate) << " [" << logLevel << "] " << message << "\n";
 
     // Close the log file
     logFile.close();
@@ -622,6 +773,7 @@ QMap<QString, QString> loadConfig(const QString &configFilePath) {
             configMap[keyValue[0].trimmed()] = keyValue[1].trimmed();
         } else {
             qWarning() << "Malformed line in config file:" << line;
+            logMessage("Malformed line in config file: " + line, "ERROR"); // Log error
         }
     }
 
@@ -629,18 +781,20 @@ QMap<QString, QString> loadConfig(const QString &configFilePath) {
     return configMap;
 }
 
+
     // Function to save a simple configuration file
     bool saveConfig(const QString &configFilePath, const QMap<QString, QString> &configMap) {
-        // Ensure the directory exists
         QFile configFile(configFilePath);
         QDir dir(QFileInfo(configFilePath).absolutePath());
         if (!dir.exists() && !dir.mkpath(".")) {
             qWarning() << "Failed to create directory for config file:" << dir.absolutePath();
+            logMessage("Failed to create directory for config file: " + dir.absolutePath(), "ERROR");
             return false;
         }
     
         if (!configFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
             qWarning() << "Unable to open configuration file for writing:" << configFilePath;
+            logMessage("Unable to open configuration file for writing: " + configFilePath, "ERROR");
             return false;
         }
     
@@ -652,44 +806,96 @@ QMap<QString, QString> loadConfig(const QString &configFilePath) {
         configFile.close();
         return true;
     }
+
     
 //////////////////////////////////////////////
 
 void addInterface(const QString &zone, const QString &interface) {
-    // Add a new interface to the configuration
+    // Check if firewallInterface is initialized
+    if (!firewallInterface) {
+        qCritical() << "Firewall interface is not initialized.";
+        return;
+    }
+
+    // Ensure zone and interface are not empty
+    if (zone.isEmpty() || interface.isEmpty()) {
+        qCritical() << "Invalid parameters. Zone or interface is empty.";
+        return;
+    }
+
+    // Add a new interface to the configuration using DBus call
     QDBusMessage reply = firewallInterface->call("addInterface", zone, interface);
+
     if (reply.type() == QDBusMessage::ReplyMessage) {
-        std::cout << "Interface " << interface.toStdString() << " added to zone " << zone.toStdString() << std::endl;
+        qDebug() << "Interface" << interface << "added to zone" << zone;
     } else {
-        std::cerr << "Error: Unable to add interface " << interface.toStdString() << " to zone " << zone.toStdString() << std::endl;
+        qCritical() << "Error: Unable to add interface" << interface << "to zone" << zone;
+        // Optionally, log the reply error message for further debugging
+        qCritical() << "DBus error:" << reply.errorMessage();
     }
 }
+
 
 void changeZoneOfInterface(const QString &zone, const QString &interface) {
-    // Change the zone of an interface
+    // Check if firewallInterface is initialized
+    if (!firewallInterface) {
+        qCritical() << "Firewall interface is not initialized.";
+        return;
+    }
+
+    // Ensure zone and interface are not empty
+    if (zone.isEmpty() || interface.isEmpty()) {
+        qCritical() << "Invalid parameters. Zone or interface is empty.";
+        return;
+    }
+
+    // Change the zone of the interface using DBus call
     QDBusMessage reply = firewallInterface->call("changeZoneOfInterface", zone, interface);
+
     if (reply.type() == QDBusMessage::ReplyMessage) {
-        std::cout << "Interface " << interface.toStdString() << " changed to zone " << zone.toStdString() << std::endl;
+        qDebug() << "Interface" << interface << "changed to zone" << zone;
     } else {
-        std::cerr << "Error: Unable to change zone of interface " << interface.toStdString() << std::endl;
+        qCritical() << "Error: Unable to change zone of interface" << interface << "to zone" << zone;
+        // Optionally, log the reply error message for further debugging
+        qCritical() << "DBus error:" << reply.errorMessage();
     }
 }
+
 
 void ChangeZone(const QString &zone, const QString &interface) {
-    // Change the zone of an interface
+    // Validate input parameters
+    if (zone.isEmpty() || interface.isEmpty()) {
+        qCritical() << "Error: Zone or interface cannot be empty.";
+        return;
+    }
+
+    // Call the function to change the zone of the interface
     changeZoneOfInterface(zone, interface);
+    
+    // Optionally log success
+    qDebug() << "Attempting to change interface" << interface << "to zone" << zone;
 }
+
 
 void removeInterface(const QString &zone, const QString &interface) {
+    // Validate input parameters
+    if (zone.isEmpty() || interface.isEmpty()) {
+        qCritical() << "Error: Zone or interface cannot be empty.";
+        return;
+    }
+
     // Remove an interface from the configuration
     QDBusMessage reply = firewallInterface->call("removeInterface", zone, interface);
-    if (reply.type() == QDBusMessage::ReplyMessage) {  // Corrected equality check here
+
+    // Check if the reply is successful
+    if (reply.type() == QDBusMessage::ReplyMessage) {
         std::cout << "Interface " << interface.toStdString() << " removed from zone " << zone.toStdString() << " successfully." << std::endl;
     } else {
+        // Log the error message if something goes wrong
         std::cerr << "Error: Unable to remove interface " << interface.toStdString() << " from zone " << zone.toStdString() << std::endl;
+        qCritical() << "DBus error:" << reply.errorName() << "-" << reply.errorMessage();
     }
 }
-
 
         
     // Example usage within this file (optional)
@@ -700,15 +906,19 @@ void removeInterface(const QString &zone, const QString &interface) {
         QMap<QString, QString> config = loadConfig(configPath);
         if (config.isEmpty()) {
             qDebug() << "No configuration found, creating a new one.";
+    
+            // Set default values for config
             config["vpnConfigPath"] = "/path/to/vpn-config.ovpn";
             config["logLevel"] = "DEBUG";
+    
+            // Attempt to save the new configuration
             if (saveConfig(configPath, config)) {
-                qDebug() << "Configuration saved successfully.";
+                qDebug() << "Configuration saved successfully at" << configPath;
             } else {
-                qDebug() << "Failed to save configuration.";
+                qCritical() << "Failed to save configuration at" << configPath;
             }
         } else {
-            qDebug() << "Loaded configuration:";
+            qDebug() << "Loaded configuration from" << configPath << ":";
             for (auto it = config.begin(); it != config.end(); ++it) {
                 qDebug() << it.key() << ":" << it.value();
             }
@@ -716,12 +926,16 @@ void removeInterface(const QString &zone, const QString &interface) {
     
         // Log a test message
         logMessage("FirewallManager started successfully.");
+    
+        // Confirming the log was written
+        qDebug() << "Test log message written successfully.";
     }
+    
     
     void cdFile() {
         QString DesktopPath = QStandardPaths::writableLocation(QStandardPaths::DesktopLocation);
         if (DesktopPath.isEmpty()) {
-            std::cerr << "Error: Unable to get desktop path" << std::endl;
+            qCritical() << "Error: Unable to get desktop path.";
             return;
         }
         QString logFilePath = DesktopPath + "/firewall_logs.txt";
@@ -729,35 +943,38 @@ void removeInterface(const QString &zone, const QString &interface) {
         // Create the log file
         QFile logFile(logFilePath);
         if (!logFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
-            std::cerr << "Error: Unable to create log file." << std::endl;
+            qCritical() << "Error: Unable to create log file at" << logFilePath;
             return;
         }
+    
         QTextStream out(&logFile);
         out << "Firewall logs: " << QDateTime::currentDateTime().toString(Qt::ISODate) << "\n";
         logFile.close();
-        std::cout << "Log file created at: " << logFilePath.toStdString() << std::endl;
+    
+        qDebug() << "Log file created at:" << logFilePath;
     }
     
     void blockWebsite(const QString &website) {
         QHostInfo hostInfo = QHostInfo::fromName(website);
         if (hostInfo.error() != QHostInfo::NoError) {
-            std::cerr << "Error: Unable to resolve domain " << website.toStdString() << std::endl;
+            qCritical() << "Error: Unable to resolve domain" << website;
             return;
         }
     
         for (const QHostAddress &address : hostInfo.addresses()) {
             QString ip = address.toString();
-            std::cout << "Blocking website " << website.toStdString() << " (IP: " << ip.toStdString() << ")" << std::endl;
+            qDebug() << "Blocking website" << website << "(IP: " << ip << ")";
     
             // Assuming firewallInterface is initialized and ready to call DBus methods
             QDBusMessage reply = firewallInterface->call("add", ip, "0.0.0.0/0", "any");
             if (reply.type() == QDBusMessage::ReplyMessage) {
-                std::cout << "Blocked: " << ip.toStdString() << std::endl;
+                qDebug() << "Blocked:" << ip;
             } else {
-                std::cerr << "Error: Unable to block IP " << ip.toStdString() << std::endl;
+                qCritical() << "Error: Unable to block IP" << ip;
             }
         }
     }
+    
     
 
     void analysisTrafficForAnomalies(const ConnectionState &connection) {
@@ -1132,7 +1349,7 @@ void removeInterface(const QString &zone, const QString &interface) {
         qDebug() << "Rolling back temporary rules.";
         unblockAllTraffic(); // Restore normal traffic flow
     }
-////////////
+
     void FirewallManager::checkFIrewallHealth(){
         QDBusMessage reply = firewallInterface->call("getFirewallStatus");
         if (reply.type() == QDBusMessage::ReplyMessage) {
@@ -1215,7 +1432,7 @@ void removeInterface(const QString &zone, const QString &interface) {
         // Initialize FirewallManager after parser
         QDBusConnection bus = QDBusConnection::systemBus();
         if (!bus.isConnected()) {
-            cerr << "Error: Unable to connect to D-Bus system bus." << endl;
+            qCritical() << "Error: Unable to connect to D-Bus system bus.";
             return 1;
         }
     
@@ -1246,7 +1463,7 @@ void removeInterface(const QString &zone, const QString &interface) {
         // Handle website blocking
         if (parser.isSet(blockWebsiteOption)) {
             if (parser.positionalArguments().isEmpty()) {
-                cerr << "Error: Missing domain name for blocking website." << endl;
+                qCritical() << "Error: Missing domain name for blocking website.";
                 return 1;
             }
             QString website = parser.positionalArguments().at(0);
@@ -1256,7 +1473,7 @@ void removeInterface(const QString &zone, const QString &interface) {
         // Handle port removal
         if (parser.isSet(removePortOption)) {
             if (parser.positionalArguments().size() < 2) {
-                cerr << "Error: Missing port and protocol for removing a port." << endl;
+                qCritical() << "Error: Missing port and protocol for removing a port.";
                 return 1;
             }
             QString port = parser.positionalArguments().at(0);
@@ -1267,28 +1484,31 @@ void removeInterface(const QString &zone, const QString &interface) {
         // Handle port addition
         if (parser.isSet(addPortOption)) {
             if (parser.positionalArguments().size() < 2) {
-                cerr << "Error: Missing port and protocol for adding a port." << endl;
+                qCritical() << "Error: Missing port and protocol for adding a port.";
                 return 1;
             }
             QString port = parser.positionalArguments().at(0);
             QString protocol = parser.positionalArguments().at(1);
             firewallManager.addPort(port, protocol);
         }
-
+    
+        // Set up threat monitoring
         QTimer threatMonitorTimer;
         QObject::connect(&threatMonitorTimer, &QTimer::timeout, [&firewallManager]() {
-        firewallManager.autoHeal(); // Check and respond to threats
+            firewallManager.autoHeal(); // Check and respond to threats
         });
         threatMonitorTimer.start(10000); // Check every 10 seconds
-
-        firewallManager.checkFirewallHealth();
-        QDateTime maintenanceTime = QDateTime::currentDateTime().addSecs(86400); // 24 hour from now
+    
+        firewallManager.checkFirewallHealth();  // Ensure firewall health is checked
+    
+        // Schedule system maintenance tasks
+        QDateTime maintenanceTime = QDateTime::currentDateTime().addSecs(86400); // 24 hours from now
         QStringList tasks = {"cleanupExpiredConnections", "optimizeFirewallRules", "updateFirewallConfig"};
         firewallManager.scheduleSystemMaintenance(maintenanceTime, tasks);
-
-        // Set up a timer for periodic training
+    
+        // Set up a timer for periodic neural network training
         QTimer trainingTimer;
-        QObject::connect(&trainingTimer, &QTimer::timeout, 
+        QObject::connect(&trainingTimer, &QTimer::timeout,
                          &firewallManager, &FirewallManager::trainNeuralNetwork);
         trainingTimer.start(3600000);  // Train every hour
     
@@ -1298,4 +1518,3 @@ void removeInterface(const QString &zone, const QString &interface) {
         return app.exec();
     }
     
-    #include "main.moc"
