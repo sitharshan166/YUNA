@@ -29,6 +29,7 @@
 #include <QDir>
 #include <QDebug>
 #include <QHostAddress>
+#include <firewallInterface.h>
 
 using namespace std;
 
