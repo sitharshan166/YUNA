@@ -1,0 +1,314 @@
+## Functions Catalog
+
+### 1. `callFirewallRule(method, action, direction, protocol)`
+**Purpose:**  
+Makes a D-Bus call to add or remove a firewall rule for ICMP traffic.  
+**Usage Example:**  
+```cpp
+callFirewallRule("addRule", "block", "in", "icmp");
+// Blocks inbound ICMP traffic
+```
+
+---
+
+### 2. `blockICMP()` / `unblockICMP()`
+**Purpose:**  
+Quickly block or unblock ICMP traffic in inbound/outbound directions via `callFirewallRule`.  
+**Usage Example:**  
+```cpp
+blockICMP();   // Blocks ICMP
+unblockICMP(); // Removes block on ICMP
+```
+
+---
+
+### 3. `ConfigureNat(externalInterface, internalNetwork)`
+**Purpose:**  
+Uses QProcess to run iptables commands, enabling NAT (masquerade) for a given interface/network.  
+**Usage Example:**  
+```cpp
+ConfigureNat("eth0", "192.168.1.0/24");
+```
+
+---
+
+### 4. `enableNat(externalInterface, internalNetwork)` / `disableNat(externalInterface, internalNetwork)`
+**Purpose:**  
+Adds or removes a NAT masquerade rule for a specific interface/network via iptables.  
+**Usage Example:**  
+```cpp
+enableNat("eth0", "192.168.1.0/24");
+// ...
+disableNat("eth0", "192.168.1.0/24");
+```
+
+---
+
+### 5. `blockIPAddress(ipAddress)`
+**Purpose:**  
+Appends an IP to “blocked_ips.json” for local storage or further offline blocking.  
+**Usage Example:**  
+```cpp
+blockIPAddress("10.0.0.15");
+```
+
+---
+
+### 6. `blockIPAddressDBus(ipAddress)` / `unblockIPAddress(ipAddress)`
+**Purpose:**  
+Makes a D-Bus call (“blockIP” / “unblockIP”) to actively block/unblock IP traffic at the firewall.  
+**Usage Example:**  
+```cpp
+blockIPAddressDBus("10.0.2.15");
+unblockIPAddress("10.0.2.15");
+```
+
+---
+
+### 7. `getGeoIP(ip)` / `onGeoLocationReceived()`
+**Purpose:**  
+Queries ip-api.com for geo-data (country, city). If country is "BlockedCountry", it calls `blockIPAddress`.  
+**Usage Example:**  
+```cpp
+getGeoIP("8.8.8.8"); // onGeoLocationReceived() triggers automatically
+```
+
+---
+
+### 8. `executeCommand(command)`
+**Purpose:**  
+Generic helper that runs a system command (via QProcess) and logs results.  
+**Usage Example:**  
+```cpp
+executeCommand("sudo apt-get update");
+```
+
+---
+
+### 9. `installingQT()` / `checkAndInstallPackage(package)`
+**Purpose:**  
+Installs “qt5-default” or other packages via apt-get, checks “firewalld” and “OpenVPN” status.  
+**Usage Example:**  
+```cpp
+installingQT();
+checkAndInstallPackage("curl");
+```
+
+---
+
+### 10. `handlePacket(sourceIP, sourcePort, destIP, destPort, packetType)`
+**Purpose:**  
+Monitors packet flows (SYN, ACK, FIN). If suspicious, runs a neural network to calculate threat scores.  
+**Usage Example:**  
+```cpp
+handlePacket("192.168.1.5", "1234", "192.168.1.10", "80", "SYN");
+```
+
+---
+
+### 11. `trainNeuralNetwork()`
+**Purpose:**  
+Trains the neural network with collected traffic data and labels.  
+**Usage Example:**  
+```cpp
+trainNeuralNetwork();
+```
+*(Often called periodically or after major data collection.)*
+
+---
+
+### 12. `sendNotification(message)`
+**Purpose:**  
+Uses QProcess (e.g., `notify-send` on Linux) to show a desktop notification.  
+**Usage Example:**  
+```cpp
+sendNotification("High threat detected!");
+```
+
+---
+
+### 13. `ruleViolationDetected(rule, violationDetail)`
+**Purpose:**  
+Sends a desktop notification/log message when a firewall rule is violated.  
+**Usage Example:**  
+```cpp
+ruleViolationDetected("Blocked Port", "Unauthorized attempt on port 8080");
+```
+
+---
+
+### 14. `addFirewallRule(sourceIP, destIP, port)` / `removeFirewallRule(ruleID)`
+**Purpose:**  
+Adds or removes a firewall rule via D-Bus.  
+**Usage Example:**  
+```cpp
+addFirewallRule("192.168.1.15", "192.168.1.100", "22");
+removeFirewallRule("rule_id_here");
+```
+
+---
+
+### 15. `enableFirewall()` / `disableFirewall()`
+**Purpose:**  
+Globally enables or disables the firewall using D-Bus calls.  
+**Usage Example:**  
+```cpp
+enableFirewall();
+// ...
+disableFirewall();
+```
+
+---
+
+### 16. `listFirewallRules()`
+**Purpose:**  
+Gets the current list of firewall rules via D-Bus. Logs the results to console.  
+**Usage Example:**  
+```cpp
+listFirewallRules();
+```
+
+---
+
+### 17. `getTrafficStats()`
+**Purpose:**  
+Retrieves traffic stats (packets, bytes) from the firewall via D-Bus.  
+**Usage Example:**  
+```cpp
+getTrafficStats(); // Prints or logs key-value stats
+```
+
+---
+
+### 18. `scheduleFirewallChange(scheduledTime, action)`
+**Purpose:**  
+Uses a QTimer to enable or disable the firewall at a future time.  
+**Usage Example:**  
+```cpp
+QDateTime futureTime = QDateTime::currentDateTime().addSecs(3600);
+scheduleFirewallChange(futureTime, "disable");
+```
+*(Disables the firewall in one hour.)*
+
+---
+
+### 19. `addInterface(zone, interface) / removeInterface(zone, interface)`
+**Purpose:**  
+Attaches or removes a network interface from a firewall zone via D-Bus.  
+**Usage Example:**  
+```cpp
+addInterface("public", "eth1");
+removeInterface("public", "eth1");
+```
+
+---
+
+### 20. `changeZoneOfInterface(zone, interface)` / `ChangeZone(zone, interface)`
+**Purpose:**  
+Changes the zone of a target interface (e.g., from “public” to “dmz”).  
+**Usage Example:**  
+```cpp
+ChangeZone("dmz", "eth0");
+```
+
+---
+
+### 21. `logMessage(message, logLevel)`
+**Purpose:**  
+Logs a message (with timestamp) into “firewall_manager.log” in the user’s home directory.  
+**Usage Example:**  
+```cpp
+logMessage("Blocking IP 10.0.0.15", "WARN");
+```
+
+---
+
+### 22. `loadConfig(filePath)` / `saveConfig(filePath, configMap)`
+**Purpose:**  
+Parses or creates a simple key=value configuration file.  
+**Usage Example:**  
+```cpp
+QMap<QString, QString> config = loadConfig("/path/to/config.txt");
+config["vpnConfigPath"] = "/new/config.ovpn";
+saveConfig("/path/to/config.txt", config);
+```
+
+---
+
+### 23. `checkFirewallHealth()`
+**Purpose:**  
+Queries “getFirewallStatus” over D-Bus, restarts the firewall if not active.  
+**Usage Example:**  
+```cpp
+checkFirewallHealth();
+```
+
+---
+
+### 24. `restartFirewallService()`
+**Purpose:**  
+Calls `restartFirewallService` over D-Bus to bring the firewall back online if needed.  
+**Usage Example:**  
+```cpp
+restartFirewallService();
+```
+
+---
+
+### 25. `scheduleSystemMaintenance(maintenanceTime, tasks)`
+**Purpose:**  
+Schedules tasks (like “cleanupExpiredConnections”) to run at a specified future time.  
+**Usage Example:**  
+```cpp
+QStringList tasks;
+tasks << "cleanupExpiredConnections" << "optimizeFirewallRules";
+scheduleSystemMaintenance(QDateTime::currentDateTime().addSecs(3600), tasks);
+```
+
+---
+
+### 26. `cleanupExpiredConnections()`
+**Purpose:**  
+Removes stale connections from the table, sends them to training data, and attempts further training if enough new data is available.  
+**Usage Example:**  
+```cpp
+cleanupExpiredConnections();
+```
+
+---
+
+### 27. `autoHeal()`
+**Purpose:**  
+Examines traffic for threats. May block all traffic temporarily, then unblock after a short period if threat is high.  
+**Usage Example:**  
+```cpp
+autoHeal();
+```
+
+---
+
+### 28. `rollbackRules()`
+**Purpose:**  
+Rolls back any temporary (emergency) firewall rules, often by calling `unblockAllTraffic()`.  
+**Usage Example:**  
+```cpp
+rollbackRules();
+```
+
+---
+
+### 29. `main()`
+**Purpose:**  
+Sets up the QCoreApplication, parses CLI arguments, initializes firewall manager objects, and starts the event loop.  
+• The command-line options (e.g., `--add-port`, `--remove-port`, `--block-website*/, `--restore-default`) are processed here.  
+**Usage Example (CLI):**  
+```bash
+./firewallSet --add-port 80 tcp
+./firewallSet --block-website example.com
+./firewallSet --restore-default
+```
+
+---
+
+## Summary
+This catalog provides an overview of the main functions in firewallSet.cpp, detailing their purpose and giving quick usage examples. You can combine these functions, either from the command line or within your code, to handle advanced firewall tasks such as NAT configuration, port management, IP blocking, configuration handling, neural-network-based threat detection, and scheduled maintenance.

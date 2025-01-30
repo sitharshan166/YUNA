@@ -34,7 +34,7 @@
 using namespace std;
 
 #define FIREWALL_PATH "/org/fedoraproject/FirewallD1"
-#define FIREWALL_INTERFACE "org.fedoraproject.FirewallD1"
+#define FIREWALL_INTERFACE "org.fedoraproject/FirewallD1"
 
 struct NetworkFeatures {
     double packetRate;
@@ -43,7 +43,6 @@ struct NetworkFeatures {
     double portNumber;
 };
 
-
 // Data structure to store connection state
 struct ConnectionState {
     QString state;      // State of the connection (NEW, ESTABLISHED, etc.)
@@ -51,205 +50,119 @@ struct ConnectionState {
     QString destIP;
     QString sourcePort;
     QString destPort;
+    QDateTime lastUpdate;
+    int packetCount;
+    qint64 totalBytes;
 };
 
+QString getHelpInformation() {
+    QString helpInfo;
+    helpInfo += "=== Firewall Manager Help ===\n";
+    helpInfo += "1. **Check Internet Connectivity**: Call `checkInternetConnectivity()` to verify if the internet is accessible.\n";
+    helpInfo += "2. **Add Firewall Rule**: Use `addFirewallRule(sourceIP, destIP, port)` to add a new rule to control traffic.\n";
+    helpInfo += "3. **Remove Firewall Rule**: Use `removeFirewallRule(ruleID)` to remove an existing rule.\n";
+    helpInfo += "4. **Block IP Address**: Call `blockIPAddress(ipAddress)` to block incoming or outgoing traffic from a specific IP.\n";
+    helpInfo += "5. **Unblock IP Address**: Call `unblockIPAddress(ipAddress)` to unblock a previously blocked IP.\n";
+    helpInfo += "6. **Enable/Disable Firewall**: Use `enableFirewall()` to enable the firewall or `disableFirewall()` to turn it off.\n";
+    helpInfo += "7. **List Firewall Rules**: Call `listFirewallRules()` to display all current firewall rules.\n";
+    helpInfo += "8. **Get Traffic Statistics**: Use `getTrafficStats()` to retrieve statistics about network traffic.\n";
+    helpInfo += "9. **Schedule Firewall Changes**: Use `scheduleFirewallChange(scheduledTime, action)` to schedule enabling or disabling the firewall.\n";
+    helpInfo += "10. **Get Automatic Helpers**: Call `getAutomaticHelpers()` to retrieve common commands and usage examples.\n";
+    helpInfo += "11. **Train Neural Network**: Call `trainNeuralNetwork()` to train a neural network to detect traffic anomalies and optimize rules.\n";
+    helpInfo += "12. **Toggle Panic Mode**: Use `togglePanicMode()` to quickly block all traffic in case of an emergency.\n";
+    helpInfo += "13. **Get GeoIP Information**: Call `getGeoIP(ip)` to retrieve geographical information for a specific IP.\n";
+    helpInfo += "14. **Log Messages**: Use `logMessage(message)` to log important events or messages for future analysis.\n";
+    helpInfo += "15. **Install QT**: Call `installingQT()` to install the necessary QT dependencies for this application.\n";
+    helpInfo += "16. **Add Network Interface**: Use `addInterface(interfaceName)` to add a new network interface to the firewall.\n";
+    helpInfo += "17. **Remove Network Interface**: Call `removeInterface(interfaceName)` to remove an interface.\n";
+    helpInfo += "18. **Change Zone of Interface**: Use `changeZoneOfInterface(interfaceName, zone)` to change the security zone of an interface.\n";
+    helpInfo += "19. **Block Websites**: Call `blockWebsite(domain)` to block access to a specific website.\n";
+    helpInfo += "20. **Analyze Traffic for Anomalies**: Use `analysisTrafficForAnomalies()` to detect irregularities in the network traffic.\n";
+    helpInfo += "21. **Detect Packet Size Anomaly**: Call `detectPacketSizeAnomaly()` to find packets that deviate from normal size patterns.\n";
+    helpInfo += "22. **Restore Default Config**: Use `restoreDefaultConfig()` to reset the firewall configuration to its default settings.\n";
+    helpInfo += "23. **Optimize Firewall Rules**: Call `optimizeFirewallRules()` to automatically adjust and improve firewall rules.\n";
+    helpInfo += "24. **Schedule System Maintenance**: Use `scheduleSystemMaintenance(time, task)` to schedule maintenance tasks such as rule updates.\n";
+    helpInfo += "25. **Send Notifications**: Call `sendNotification(message)` to send notifications about critical events or system status.\n";
+    helpInfo += "26. **Exit**: Type `exit` to close the application.\n";
+
+    return helpInfo;
+
+    }
+  
+    
 class FirewallManager : public QObject {
     Q_OBJECT
+
+private:
+    std::unique_ptr<NeuralNetwork> neuralNetwork; // Smart pointer for automatic memory management
+    std::vector<std::vector<double>> trainingData;
+    std::vector<std::vector<double>> trainingLabels;
+    QDBusInterface *firewallInterface;
+    QNetworkAccessManager *networkManager;
+    bool panicModeEnabled = false;
+
 public:
-    explicit FirewallManager(QObject *parent = nullptr) : QObject(parent) {}
+    explicit FirewallManager(QObject *parent = nullptr) : QObject(parent) {
+        initializeNeuralNetwork();
+        networkManager = new QNetworkAccessManager(this);
+    }
+
     explicit FirewallManager(QDBusConnection &bus, QObject *parent = nullptr) : QObject(parent) {
         firewallInterface = new QDBusInterface(FIREWALL_INTERFACE, FIREWALL_PATH, FIREWALL_INTERFACE, bus, this);
         if (!firewallInterface->isValid()) {
             cerr << "Error: Unable to get firewalld interface." << endl;
             exit(1);
         }
+        initializeNeuralNetwork();
+        networkManager = new QNetworkAccessManager(this);
     }
 
-    QString getHelpInformation() {
-        QString helpInfo;
-        helpInfo += "=== Firewall Manager Help ===\n";
-        helpInfo += "1. **Check Internet Connectivity**: Call `checkInternetConnectivity()` to verify if the internet is accessible.\n";
-        helpInfo += "2. **Add Firewall Rule**: Use `addFirewallRule(sourceIP, destIP, port)` to add a new rule to control traffic.\n";
-        helpInfo += "3. **Remove Firewall Rule**: Use `removeFirewallRule(ruleID)` to remove an existing rule.\n";
-        helpInfo += "4. **Block IP Address**: Call `blockIPAddress(ipAddress)` to block incoming or outgoing traffic from a specific IP.\n";
-        helpInfo += "5. **Unblock IP Address**: Call `unblockIPAddress(ipAddress)` to unblock a previously blocked IP.\n";
-        helpInfo += "6. **Enable/Disable Firewall**: Use `enableFirewall()` to enable the firewall or `disableFirewall()` to turn it off.\n";
-        helpInfo += "7. **List Firewall Rules**: Call `listFirewallRules()` to display all current firewall rules.\n";
-        helpInfo += "8. **Get Traffic Statistics**: Use `getTrafficStats()` to retrieve statistics about network traffic.\n";
-        helpInfo += "9. **Schedule Firewall Changes**: Use `scheduleFirewallChange(scheduledTime, action)` to schedule enabling or disabling the firewall.\n";
-        helpInfo += "10. **Get Automatic Helpers**: Call `getAutomaticHelpers()` to retrieve common commands and usage examples.\n";
-        helpInfo += "11. **Train Neural Network**: Call `trainNeuralNetwork()` to train a neural network to detect traffic anomalies and optimize rules.\n";
-        helpInfo += "12. **Toggle Panic Mode**: Use `togglePanicMode()` to quickly block all traffic in case of an emergency.\n";
-        helpInfo += "13. **Get GeoIP Information**: Call `getGeoIP(ip)` to retrieve geographical information for a specific IP.\n";
-        helpInfo += "14. **Log Messages**: Use `logMessage(message)` to log important events or messages for future analysis.\n";
-        helpInfo += "15. **Install QT**: Call `installingQT()` to install the necessary QT dependencies for this application.\n";
-        helpInfo += "16. **Add Network Interface**: Use `addInterface(interfaceName)` to add a new network interface to the firewall.\n";
-        helpInfo += "17. **Remove Network Interface**: Call `removeInterface(interfaceName)` to remove an interface.\n";
-        helpInfo += "18. **Change Zone of Interface**: Use `changeZoneOfInterface(interfaceName, zone)` to change the security zone of an interface.\n";
-        helpInfo += "19. **Block Websites**: Call `blockWebsite(domain)` to block access to a specific website.\n";
-        helpInfo += "20. **Analyze Traffic for Anomalies**: Use `analysisTrafficForAnomalies()` to detect irregularities in the network traffic.\n";
-        helpInfo += "21. **Detect Packet Size Anomaly**: Call `detectPacketSizeAnomaly()` to find packets that deviate from normal size patterns.\n";
-        helpInfo += "22. **Restore Default Config**: Use `restoreDefaultConfig()` to reset the firewall configuration to its default settings.\n";
-        helpInfo += "23. **Optimize Firewall Rules**: Call `optimizeFirewallRules()` to automatically adjust and improve firewall rules.\n";
-        helpInfo += "24. **Schedule System Maintenance**: Use `scheduleSystemMaintenance(time, task)` to schedule maintenance tasks such as rule updates.\n";
-        helpInfo += "25. **Send Notifications**: Call `sendNotification(message)` to send notifications about critical events or system status.\n";
-        helpInfo += "26. **Exit**: Type `exit` to close the application.\n";
-    
-        return helpInfo;
+    ~FirewallManager() {
+        delete firewallInterface;
     }
-    
-    void connectToVpn(const QString &configPath) {
-        // Ensure the configPath is valid
-        if (configPath.isEmpty() || !QFile::exists(configPath)) {
-            qDebug() << "Error: Invalid or nonexistent VPN config path.";
-            return;
-        }
-    
-        QString vpnCommand = "openvpn";
-        QStringList arguments;
-        arguments << "--config" << configPath;
-    
-        QProcess *process = new QProcess(this);
-    
-        // Handle process errors
-        connect(process, &QProcess::errorOccurred, this, [process](QProcess::ProcessError error) {
-            qDebug() << "Error: VPN process error occurred:" << error;
-            process->deleteLater();
-        });
-    
-        // Handle process completion
-        connect(process, &QProcess::finished, this, [process](int exitCode, QProcess::ExitStatus exitStatus) {
-            if (exitStatus == QProcess::NormalExit && exitCode == 0) {
-                qDebug() << "Connected to VPN successfully.";
-            } else {
-                QString errorOutput = process->readAllStandardError();
-                qDebug() << "Error: Unable to connect to VPN. Exit code:" << exitCode << "Error Output:" << errorOutput;
-            }
-            process->deleteLater(); // Cleanup
-        });
-    
-        // Start the process
-        process->start(vpnCommand, arguments);
-        if (!process->waitForStarted()) {
-            qDebug() << "Failed to start VPN process.";
-            process->deleteLater(); // Cleanup
-        }
+
+    void initializeNeuralNetwork() {
+        // Initialize NeuralNetwork with 4 inputs (features), 6 hidden neurons, and 1 output (threat score)
+        neuralNetwork = std::make_unique<NeuralNetwork>(4, 6, 1);
+
+        // Seed the random number generator
+        srand(static_cast<unsigned>(time(0)));
     }
-    
-    void disconnectVpn() {
-        QProcess process;
-        process.start("pkill", QStringList() << "openvpn");
-        process.waitForFinished();
-        if (process.exitCode() == 0) {
-            qDebug() << "VPN disconnected successfully.";
-        } else {
-            qDebug() << "Failed to disconnect VPN. Exit code:" << process.exitCode() << ". Error output:" << process.readAllStandardError();
-        }
+
+    NetworkFeatures extractFeatures(const ConnectionState& connection) {
+        NetworkFeatures features;
+
+        // Normalize destination port
+        bool ok;
+        double port = connection.destPort.toDouble(&ok);
+        features.portNumber = (ok && port > 0) ? port / 65535.0 : 0.0;
+
+        // Calculate packet rate
+        QDateTime now = QDateTime::currentDateTime();
+        int timeDiff = connection.lastUpdate.secsTo(now); // Time difference in seconds
+        features.packetRate = (timeDiff > 0 && connection.packetCount > 0) 
+                                ? connection.packetCount / static_cast<double>(timeDiff)
+                                : 0.0;
+
+        // Normalize packet size to MB
+        features.packetSize = connection.totalBytes > 0 
+                                ? connection.totalBytes / (1024.0 * 1024.0) 
+                                : 0.0;
+
+        // Calculate connection duration in hours
+        features.connectionDuration = (timeDiff > 0) 
+                                        ? timeDiff / 3600.0 
+                                        : 0.0;
+
+        return features;
     }
-    
-    bool isVpnConnected() {
-        QProcess process;
-        process.start("pgrep", QStringList() << "openvpn");
-        process.waitForFinished();
-        if (process.exitCode() == 0) {
-            qDebug() << "VPN is connected.";
-            return true;
-        } else {
-            qDebug() << "VPN is not connected.";
-            return false;
-        }
+
+    std::vector<double> convertToVector(const NetworkFeatures& features) {
+        // Directly initialize the vector with feature values
+        return {features.packetRate, features.packetSize, features.connectionDuration, features.portNumber};
     }
-    void checkInternetConnectivity() {
-        static const QUrl testUrl("http://www.google.com"); // Configurable test URL
-        static const int timeoutDuration = 5000; // Timeout in milliseconds
-    
-        QNetworkRequest request(testUrl);
-        QNetworkReply *reply = networkManager->get(request);
-    
-        QTimer *timeoutTimer = new QTimer(this);
-        timeoutTimer->setSingleShot(true);
-    
-        // Timeout handling
-        connect(timeoutTimer, &QTimer::timeout, this, [reply, timeoutTimer, this]() {
-            logError("Internet connectivity check timed out.");
-            reply->abort();
-            reply->deleteLater();
-            timeoutTimer->deleteLater();
-        });
-    
-        connect(reply, &QNetworkReply::finished, this, [reply, timeoutTimer, this]() {
-            timeoutTimer->stop();
-            timeoutTimer->deleteLater();
-    
-            if (reply->error() == QNetworkReply::NoError) {
-                int statusCode = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
-                if (statusCode == 200) {
-                    logInfo("Internet is available.");
-                    emit internetStatusChanged(true);
-                } else {
-                    logError("Unexpected HTTP status code: " + QString::number(statusCode));
-                    emit internetStatusChanged(false);
-                }
-            } else {
-                logError("Internet is not available: " + reply->errorString());
-                emit internetStatusChanged(false);
-            }
-    
-            reply->deleteLater();
-        });
-    
-        timeoutTimer->start(timeoutDuration);
-    }
-    
-private:
-std::unique_ptr<NeuralNetwork> neuralNetwork; // Smart pointer for automatic memory management
-std::vector<std::vector<double>> trainingData;
-std::vector<std::vector<double>> trainingLabels;
 
-public:
-void initializeNeuralNetwork() {
-    // Initialize NeuralNetwork with 4 inputs (features), 6 hidden neurons, and 1 output (threat score)
-    neuralNetwork = std::make_unique<NeuralNetwork>(4, 6, 1);
-
-    // Seed the random number generator
-    srand(static_cast<unsigned>(time(0)));
-}
-
-NetworkFeatures extractFeatures(const ConnectionState& connection) {
-    NetworkFeatures features;
-
-    // Normalize destination port
-    bool ok;
-    double port = connection.destPort.toDouble(&ok);
-    features.portNumber = (ok && port > 0) ? port / 65535.0 : 0.0;
-
-    // Calculate packet rate
-    QDateTime now = QDateTime::currentDateTime();
-    int timeDiff = connection.lastUpdate.secsTo(now); // Time difference in seconds
-    features.packetRate = (timeDiff > 0 && connection.packetCount > 0) 
-                            ? connection.packetCount / static_cast<double>(timeDiff)
-                            : 0.0;
-
-    // Normalize packet size to MB
-    features.packetSize = connection.totalBytes > 0 
-                            ? connection.totalBytes / (1024.0 * 1024.0) 
-                            : 0.0;
-
-    // Calculate connection duration in hours
-    features.connectionDuration = (timeDiff > 0) 
-                                    ? timeDiff / 3600.0 
-                                    : 0.0;
-
-    return features;
-}
-
-std::vector<double> convertToVector(const NetworkFeatures& features) {
-    // Directly initialize the vector with feature values
-    return {features.packetRate, features.packetSize, features.connectionDuration, features.portNumber};
-}
-
-
-        // Log an error message
+    // Log an error message
     void logError(const QString &message) {
         Logger::log("ERROR: " + message);
     }
@@ -267,7 +180,7 @@ std::vector<double> convertToVector(const NetworkFeatures& features) {
     void addNatRule(const QString &sourceIP, const QString &destIP, const QString &port) {
         // Create a new NAT rule using D-Bus interface
         QDBusMessage reply = firewallInterface->call("AddNatRule", sourceIP, destIP, port);
-    
+
         if (reply.type() == QDBusMessage::ReplyMessage) {
             qDebug() << "NAT rule added successfully:" 
                      << sourceIP << "->" << destIP << ":" << port;
@@ -279,11 +192,11 @@ std::vector<double> convertToVector(const NetworkFeatures& features) {
                         << "Reply type:" << reply.type();
         }
     }
-    
+
     void removeNatRule(const QString &ruleID) {
         // Remove an existing NAT rule using D-Bus interface
         QDBusMessage reply = firewallInterface->call("RemoveNatRule", ruleID);
-    
+
         if (reply.type() == QDBusMessage::ReplyMessage) {
             qDebug() << "NAT rule removed successfully:" << ruleID;
         } else if (reply.type() == QDBusMessage::ErrorMessage) {
@@ -294,12 +207,110 @@ std::vector<double> convertToVector(const NetworkFeatures& features) {
                         << "Reply type:" << reply.type();
         }
     }
-    
-    // Global variable for panic mode
-    bool panicModeEnabled = false;
-    
-    // Example usage for panic mode toggle
-    bool panicModeEnabled = false;
+
+    void checkInternetConnectivity() {
+        static const QUrl testUrl("http://www.google.com"); // Configurable test URL
+        static const int timeoutDuration = 5000; // Timeout in milliseconds
+
+        QNetworkRequest request(testUrl);
+        QNetworkReply *reply = networkManager->get(request);
+
+        QTimer *timeoutTimer = new QTimer(this);
+        timeoutTimer->setSingleShot(true);
+
+        // Timeout handling
+        connect(timeoutTimer, &QTimer::timeout, this, [reply, timeoutTimer, this]() {
+            logError("Internet connectivity check timed out.");
+            reply->abort();
+            reply->deleteLater();
+            timeoutTimer->deleteLater();
+        });
+
+        connect(reply, &QNetworkReply::finished, this, [reply, timeoutTimer, this]() {
+            timeoutTimer->stop();
+            timeoutTimer->deleteLater();
+
+            if (reply->error() == QNetworkReply::NoError) {
+                int statusCode = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+                if (statusCode == 200) {
+                    logInfo("Internet is available.");
+                    emit internetStatusChanged(true);
+                } else {
+                    logError("Unexpected HTTP status code: " + QString::number(statusCode));
+                    emit internetStatusChanged(false);
+                }
+            } else {
+                logError("Internet is not available: " + reply->errorString());
+                emit internetStatusChanged(false);
+            }
+
+            reply->deleteLater();
+        });
+
+        timeoutTimer->start(timeoutDuration);
+    }
+
+    void connectToVpn(const QString &configPath) {
+        // Ensure the configPath is valid
+        if (configPath.isEmpty() || !QFile::exists(configPath)) {
+            qDebug() << "Error: Invalid or nonexistent VPN config path.";
+            return;
+        }
+
+        QString vpnCommand = "openvpn";
+        QStringList arguments;
+        arguments << "--config" << configPath;
+
+        QProcess *process = new QProcess(this);
+
+        // Handle process errors
+        connect(process, &QProcess::errorOccurred, this, [process](QProcess::ProcessError error) {
+            qDebug() << "Error: VPN process error occurred:" << error;
+            process->deleteLater();
+        });
+
+        // Handle process completion
+        connect(process, &QProcess::finished, this, [process](int exitCode, QProcess::ExitStatus exitStatus) {
+            if (exitStatus == QProcess::NormalExit && exitCode == 0) {
+                qDebug() << "Connected to VPN successfully.";
+            } else {
+                QString errorOutput = process->readAllStandardError();
+                qDebug() << "Error: Unable to connect to VPN. Exit code:" << exitCode << "Error Output:" << errorOutput;
+            }
+            process->deleteLater(); // Cleanup
+        });
+
+        // Start the process
+        process->start(vpnCommand, arguments);
+        if (!process->waitForStarted()) {
+            qDebug() << "Failed to start VPN process.";
+            process->deleteLater(); // Cleanup
+        }
+    }
+
+    void disconnectVpn() {
+        QProcess process;
+        process.start("pkill", QStringList() << "openvpn");
+        process.waitForFinished();
+        if (process.exitCode() == 0) {
+            qDebug() << "VPN disconnected successfully.";
+        } else {
+            qDebug() << "Failed to disconnect VPN. Exit code:" << process.exitCode() << ". Error output:" << process.readAllStandardError();
+        }
+    }
+
+    bool isVpnConnected() {
+        QProcess process;
+        process.start("pgrep", QStringList() << "openvpn");
+        process.waitForFinished();
+        if (process.exitCode() == 0) {
+            qDebug() << "VPN is connected.";
+            return true;
+        } else {
+            qDebug() << "VPN is not connected.";
+            return false;
+        }
+    }
 
     // Function to toggle panic mode
     void togglePanicMode() {
@@ -315,7 +326,7 @@ std::vector<double> convertToVector(const NetworkFeatures& features) {
             logPanicModeEvent(); // Log panic mode event
         }
     }
-    
+
     // Function to block all traffic
     void blockAllTraffic() {
         // Block all incoming traffic
@@ -324,7 +335,7 @@ std::vector<double> convertToVector(const NetworkFeatures& features) {
         } else {
             qCritical() << "ERROR: Failed to block incoming traffic.";
         }
-    
+
         // Block all outgoing traffic
         if (addFirewallRule("block", "out", "all", "all", "all")) {
             qDebug() << "Successfully blocked all outgoing traffic.";
@@ -332,7 +343,7 @@ std::vector<double> convertToVector(const NetworkFeatures& features) {
             qCritical() << "ERROR: Failed to block outgoing traffic.";
         }
     }
-    
+
     // Function to unblock all traffic
     void unblockAllTraffic() {
         // Unblock all incoming traffic
@@ -341,7 +352,7 @@ std::vector<double> convertToVector(const NetworkFeatures& features) {
         } else {
             qCritical() << "ERROR: Failed to unblock incoming traffic.";
         }
-    
+
         // Unblock all outgoing traffic
         if (removeFirewallRule("block", "out", "all", "all", "all")) {
             qDebug() << "Successfully unblocked all outgoing traffic.";
@@ -349,7 +360,7 @@ std::vector<double> convertToVector(const NetworkFeatures& features) {
             qCritical() << "ERROR: Failed to unblock outgoing traffic.";
         }
     }
-    
+
     // Function to log panic mode events
     void logPanicModeEvent() {
         QFile logfile("panic_modelog.txt");
@@ -363,6 +374,28 @@ std::vector<double> convertToVector(const NetworkFeatures& features) {
             qCritical() << "ERROR: Failed to open panic_modelog.txt for writing.";
         }
     }
+
+    void callFirewallRule(const QString& method, const QString& action, const QString& direction, const QString& protocol) {
+        QDBusMessage reply = firewallInterface->call(method, action, direction, "all", protocol);
+
+        if (reply.type() == QDBusMessage::ReplyMessage) {
+            qDebug() << QString("Successfully %1 %2 ICMP traffic for %3.")
+                            .arg((method.contains("add", Qt::CaseInsensitive) ? "blocked" : "unblocked"))
+                            .arg(protocol.toUpper())
+                            .arg(direction);
+        } else {
+            qCritical() << QString("Error: Unable to %1 %2 ICMP traffic for %3.")
+                                .arg((method.contains("add", Qt::CaseInsensitive) ? "block" : "unblock"))
+                                .arg(protocol.toUpper())
+                                .arg(direction);
+        }
+    }
+
+signals:
+    void internetStatusChanged(bool status);
+};
+
+//////////////////////////////////////////////////////////////
 
     void callFirewallRule(const QString& method, const QString& action, const QString& direction, const QString& protocol) {
         QDBusMessage reply = firewallInterface->call(method, action, direction, "all", protocol);
@@ -1150,10 +1183,8 @@ void removeInterface(const QString &zone, const QString &interface) {
     }
     
     
-
-    void blockIPAddress(const QString &ipAddress) {
-        cout << "Attempting to block IP address: " << ipAddress.toStdString() << endl;
-    
+    void blockIPAddressDBus(const QString &ipAddress) {
+        cout << "Attempting to block IP address via D-Bus: " << ipAddress.toStdString() << endl;
         QDBusMessage reply = firewallInterface->call("blockIP", ipAddress);
         if (reply.type() == QDBusMessage::ReplyMessage) {
             cout << "IP address blocked successfully: " << ipAddress.toStdString() << endl;
@@ -1161,6 +1192,7 @@ void removeInterface(const QString &zone, const QString &interface) {
             cerr << "Error: Unable to block IP address " << ipAddress.toStdString() << ". DBus call failed." << endl;
         }
     }
+   
     
     void unblockIPAddress(const QString &ipAddress) {
         cout << "Attempting to unblock IP address: " << ipAddress.toStdString() << endl;
@@ -1343,10 +1375,10 @@ void removeInterface(const QString &zone, const QString &interface) {
         unblockAllTraffic(); // Restore normal traffic flow
     }
 
-    void FirewallManager::checkFIrewallHealth(){
+    void FirewallManager::checkFirewallHealth() {
         QDBusMessage reply = firewallInterface->call("getFirewallStatus");
         if (reply.type() == QDBusMessage::ReplyMessage) {
-            QVariant status = reply.arguments().at(0)
+            QVariant status = reply.arguments().at(0); // ensure semicolon
             if (status.toString() == "active") {
                 qDebug() << "Firewall is healthy and running.";
             } else {
@@ -1356,7 +1388,7 @@ void removeInterface(const QString &zone, const QString &interface) {
         } else {
             qCritical() << "Error: Unable to check firewall status."
                         << reply.errorMessage();
-        } 
+        }
     }
     
     void FirewallManager::restartFirewallService() {
@@ -1418,96 +1450,89 @@ void removeInterface(const QString &zone, const QString &interface) {
     }    
 
 
-    int main(int argc, char *argv[]) {
-        QCoreApplication app(argc, argv);
-        QCommandLineParser parser;
-    
-        // Initialize FirewallManager after parser
-        QDBusConnection bus = QDBusConnection::systemBus();
-        if (!bus.isConnected()) {
-            qCritical() << "Error: Unable to connect to D-Bus system bus.";
+   int main(int argc, char *argv[]) {
+    QCoreApplication app(argc, argv);
+    QCommandLineParser parser;
+    parser.setApplicationDescription("Manage Firewall Rules using D-Bus");
+    parser.addHelpOption();
+    parser.addVersionOption();
+
+    // Establish D-Bus connection
+    QDBusConnection bus = QDBusConnection::systemBus();
+    if (!bus.isConnected()) {
+        qCritical() << "Error: Unable to connect to D-Bus system bus.";
+        return 1;
+    }
+
+    FirewallManager firewallManager(bus);
+    firewallManager.initializeNeuralNetwork();
+
+    // Define command-line options
+    QCommandLineOption restoreDefaultOption("restore-default", "Restore the default firewall configuration.");
+    QCommandLineOption blockWebsiteOption("block-website", "Block a specific website <domain>");
+    QCommandLineOption addPortOption("add-port", "Add a port to the firewall <port> <protocol>", "port");
+    QCommandLineOption removePortOption("remove-port", "Remove a port from the firewall <port> <protocol>", "port");
+
+    parser.addOption(restoreDefaultOption);
+    parser.addOption(blockWebsiteOption);
+     parser.addOption(addPortOption);
+    parser.addOption(removePortOption);
+    parser.process(app);
+
+    if (parser.isSet(restoreDefaultOption)) {
+        firewallManager.restoreDefaultConfig();
+    }
+
+    if (parser.isSet(blockWebsiteOption)) {
+        if (parser.positionalArguments().isEmpty()) {
+            qCritical() << "Error: Missing domain name for blocking website.";
             return 1;
         }
-    
-        FirewallManager firewallManager(bus);
-        firewallManager.initializeNeuralNetwork();  // Initialize the neural network
-    
-        // Set up command-line options
-        parser.setApplicationDescription("Manage Firewall Rules using D-Bus");
-        parser.addHelpOption();
-        parser.addVersionOption();
-        
-        QCommandLineOption restoreDefaultOption("restore-default", "Restore the default firewall configuration.");
-        QCommandLineOption blockWebsiteOption("block-website", "Block a specific website <domain>");
-        QCommandLineOption addPortOption("add-port", "Add a port to the firewall <port> <protocol>", "port");
-        QCommandLineOption removePortOption("remove-port", "Remove a port from the firewall <port> <protocol>", "port");
-    
-        parser.addOption(restoreDefaultOption);
-        parser.addOption(blockWebsiteOption);
-        parser.addOption(addPortOption);
-        parser.addOption(removePortOption);
-        parser.process(app);
-    
-        // Handle restore-default option
-        if (parser.isSet(restoreDefaultOption)) {
-            firewallManager.restoreDefaultConfig();  // Restore default firewall configuration
-        }
-    
-        // Handle website blocking
-        if (parser.isSet(blockWebsiteOption)) {
-            if (parser.positionalArguments().isEmpty()) {
-                qCritical() << "Error: Missing domain name for blocking website.";
-                return 1;
-            }
-            QString website = parser.positionalArguments().at(0);
-            firewallManager.blockWebsite(website);
-        }
-    
-        // Handle port removal
-        if (parser.isSet(removePortOption)) {
-            if (parser.positionalArguments().size() < 2) {
-                qCritical() << "Error: Missing port and protocol for removing a port.";
-                return 1;
-            }
-            QString port = parser.positionalArguments().at(0);
-            QString protocol = parser.positionalArguments().at(1);
-            firewallManager.removePort(port, protocol);
-        }
-    
-        // Handle port addition
-        if (parser.isSet(addPortOption)) {
-            if (parser.positionalArguments().size() < 2) {
-                qCritical() << "Error: Missing port and protocol for adding a port.";
-                return 1;
-            }
-            QString port = parser.positionalArguments().at(0);
-            QString protocol = parser.positionalArguments().at(1);
-            firewallManager.addPort(port, protocol);
-        }
-    
-        // Set up threat monitoring
-        QTimer threatMonitorTimer;
-        QObject::connect(&threatMonitorTimer, &QTimer::timeout, [&firewallManager]() {
-            firewallManager.autoHeal(); // Check and respond to threats
-        });
-        threatMonitorTimer.start(10000); // Check every 10 seconds
-    
-        firewallManager.checkFirewallHealth();  // Ensure firewall health is checked
-    
-        // Schedule system maintenance tasks
-        QDateTime maintenanceTime = QDateTime::currentDateTime().addSecs(86400); // 24 hours from now
-        QStringList tasks = {"cleanupExpiredConnections", "optimizeFirewallRules", "updateFirewallConfig"};
-        firewallManager.scheduleSystemMaintenance(maintenanceTime, tasks);
-    
-        // Set up a timer for periodic neural network training
-        QTimer trainingTimer;
-        QObject::connect(&trainingTimer, &QTimer::timeout,
-                         &firewallManager, &FirewallManager::trainNeuralNetwork);
-        trainingTimer.start(3600000);  // Train every hour
-    
-        // Example of rule violation
-        firewallManager.ruleViolationDetected("Blocked Port", "Unauthorized access attempt detected on port 8080");
-    
-        return app.exec();
+        QString website = parser.positionalArguments().at(0);
+        firewallManager.blockWebsite(website);
     }
-    
+
+    if (parser.isSet(removePortOption)) {
+        if (parser.positionalArguments().size() < 2) {
+            qCritical() << "Error: Missing port and protocol for removing a port.";
+            return 1;
+        }
+        QString port = parser.positionalArguments().at(0);
+        QString protocol = parser.positionalArguments().at(1);
+        firewallManager.removePort(port, protocol);
+    }
+
+    if (parser.isSet(addPortOption)) {
+        if (parser.positionalArguments().size() < 2) {
+            qCritical() << "Error: Missing port and protocol for adding a port.";
+            return 1;
+        }
+        QString port = parser.positionalArguments().at(0);
+        QString protocol = parser.positionalArguments().at(1);
+        firewallManager.addPort(port, protocol);
+    }
+    // Schedule threat checks
+    QTimer threatMonitorTimer;
+    QObject::connect(&threatMonitorTimer, &QTimer::timeout, [&firewallManager]() {
+        firewallManager.autoHeal();
+    });
+    threatMonitorTimer.start(10000);
+
+    // Check firewall health
+    firewallManager.checkFirewallHealth();
+
+    // Schedule system maintenance (example: 24 hours from now)
+    QDateTime maintenanceTime = QDateTime::currentDateTime().addSecs(86400);
+    QStringList tasks = {"cleanupExpiredConnections", "optimizeFirewallRules", "updateFirewallConfig"};
+    firewallManager.scheduleSystemMaintenance(maintenanceTime, tasks);
+
+    // Periodic neural network training (example: every hour)
+    QTimer trainingTimer;
+    QObject::connect(&trainingTimer, &QTimer::timeout, &firewallManager, &FirewallManager::trainNeuralNetwork);
+    trainingTimer.start(3600000);
+
+    // Example of rule violation
+    firewallManager.ruleViolationDetected("Blocked Port", "Unauthorized access attempt detected on port 8080");
+
+    return app.exec();
+}
